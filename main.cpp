@@ -532,7 +532,10 @@ int actionUnpack(void)
     s_flashmem.resize(s_imageSize, 0xff);
 
     // read content into s_flashmem
-    fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc);
+    if (fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc) != s_flashmem.size() / 4) {
+        std::cerr << "error: couldn't read image" << std::endl;
+        return 1;
+    }
 
     // close file handle
     fclose(fdsrc);
@@ -574,7 +577,10 @@ int actionList()
 
     s_flashmem.resize(s_imageSize, 0xff);
 
-    fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc);
+    if (fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc) != s_flashmem.size() / 4) {
+        std::cerr << "error: couldn't read image" << std::endl;
+        return 1;
+    }
     fclose(fdsrc);
 
     if (!spiffsMount()) {
@@ -607,7 +613,10 @@ int actionVisualize()
     s_flashmem.resize(s_imageSize, 0xff);
 
 
-    fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc);
+    if (fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc) != s_flashmem.size() / 4) {
+        std::cerr << "error: couldn't read image" << std::endl;
+        return 1;
+    }
     fclose(fdsrc);
 
     if (!spiffsMount()) {

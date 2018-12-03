@@ -26,7 +26,7 @@ endif
 endif # TARGET_OS
 
 # OS-specific settings and build flags
-ifeq ($(TARGET_OS),win32)
+ifeq ($(TARGET_OS),windows)
 	ARCHIVE ?= zip
 	TARGET := mkspiffs.exe
 	TARGET_CFLAGS = -mno-ms-bitfields
@@ -34,12 +34,6 @@ ifeq ($(TARGET_OS),win32)
 else
 	ARCHIVE ?= tar
 	TARGET := mkspiffs
-endif
-
-ifeq ($(TARGET_OS),osx)
-	TARGET_CFLAGS   = -mmacosx-version-min=10.7 -arch i386 -arch x86_64
-	TARGET_CXXFLAGS = -mmacosx-version-min=10.7 -arch i386 -arch x86_64 -stdlib=libc++
-	TARGET_LDFLAGS  = -mmacosx-version-min=10.7 -arch i386 -arch x86_64 -stdlib=libc++
 endif
 
 # Packaging into archive (for 'dist' target)
@@ -52,6 +46,7 @@ ifeq ($(ARCHIVE), tar)
 	ARCHIVE_EXTENSION := tar.gz
 endif
 
+STRIP ?= strip
 
 VERSION ?= $(shell git describe --always)
 SPIFFS_VERSION := $(shell git -C spiffs describe --tags || echo "unknown")
@@ -104,7 +99,7 @@ $(DIST_ARCHIVE): $(TARGET) $(DIST_DIR)
 
 $(TARGET): $(OBJ)
 	$(CXX) $^ -o $@ $(LDFLAGS)
-	strip $(TARGET)
+	$(STRIP) $(TARGET)
 
 $(DIST_DIR):
 	@mkdir -p $@
