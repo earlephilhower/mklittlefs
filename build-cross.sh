@@ -1,21 +1,21 @@
 #!/bin/bash
-name=mkspiffs-$(git rev-parse --short HEAD)
+name=mklittlefs-$(git rev-parse --short HEAD)
 rel=${rel:=-2.5.0}
 subrel=${subrel:-1}
 
 build ()
 {(
-    TARGET_OS=${tgt} CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mkspiffs${exe} BUILD_CONFIG_NAME="-arduino-esp8266" CPPFLAGS="-DSPIFFS_USE_MAGIC_LENGTH=0 -DSPIFFS_ALIGNED_OBJECT_INDEX_TABLES=1"
+    TARGET_OS=${tgt} CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mklittlefs${exe} BUILD_CONFIG_NAME="-arduino-esp8266" CPPFLAGS="-DSPIFFS_USE_MAGIC_LENGTH=0 -DSPIFFS_ALIGNED_OBJECT_INDEX_TABLES=1"
     rm -rf tmp
-    mkdir -p tmp/mkspiffs
-    mv mkspiffs${exe} tmp/mkspiffs/.
+    mkdir -p tmp/mklittlefs
+    mv mklittlefs${exe} tmp/mklittlefs/.
     cd tmp
     if [ "${exe}" == "" ]; then
         tarball=${pfx}-$name.tar.gz
-        tar zcvf ../${tarball} mkspiffs
+        tar zcvf ../${tarball} mklittlefs
     else
         tarball=${pfx}-$name.zip
-        zip -rq ../${tarball} mkspiffs
+        zip -rq ../${tarball} mklittlefs
     fi
     cd ..
     rm -rf tmp
@@ -23,7 +23,7 @@ build ()
     tarballsha256=$(sha256sum ${tarball} | cut -f1 -d" ")
     ( echo '            {' &&
       echo '              "host": "'$AHOST'",' &&
-      echo '              "url": "https://github.com/earlephilhower/mkspiffs/releases/download/'${rel}-${subrel}'/'${tarball}'",' &&
+      echo '              "url": "https://github.com/earlephilhower/mklittlefs/releases/download/'${rel}-${subrel}'/'${tarball}'",' &&
       echo '              "archiveFileName": "'${tarball}'",' &&
       echo '              "checksum": "SHA-256:'${tarballsha256}'",' &&
       echo '              "size": "'${tarballsize}'"' &&

@@ -28,12 +28,12 @@ endif # TARGET_OS
 # OS-specific settings and build flags
 ifeq ($(TARGET_OS),windows)
 	ARCHIVE ?= zip
-	TARGET := mkspiffs.exe
+	TARGET := mklittlefs.exe
 	TARGET_CFLAGS = -mno-ms-bitfields
 	TARGET_LDFLAGS = -Wl,-static -static-libgcc -static-libstdc++
 else
 	ARCHIVE ?= tar
-	TARGET := mkspiffs
+	TARGET := mklittlefs
 endif
 
 # Packaging into archive (for 'dist' target)
@@ -49,19 +49,16 @@ endif
 STRIP ?= strip
 
 VERSION ?= $(shell git describe --always)
-SPIFFS_VERSION := $(shell git -C spiffs describe --tags || echo "unknown")
+LITTLEFS_VERSION := $(shell git -C littlefs describe --tags || echo "unknown")
 BUILD_CONFIG_NAME ?= -generic
 
 OBJ		:= main.o \
-		   spiffs/src/spiffs_cache.o \
-		   spiffs/src/spiffs_check.o \
-		   spiffs/src/spiffs_gc.o \
-		   spiffs/src/spiffs_hydrogen.o \
-		   spiffs/src/spiffs_nucleus.o \
+		   littlefs/lfs.o \
+		   littlefs/lfs_util.o
 
-INCLUDES := -Itclap -Iinclude -Ispiffs/src -I.
+INCLUDES := -Itclap -Iinclude -Ilittlefs -I.
 
-FILES_TO_FORMAT := $(shell find . -not -path './spiffs/*' \( -name '*.c' -o -name '*.cpp' \))
+FILES_TO_FORMAT := $(shell find . -not -path './littlefs/*' \( -name '*.c' -o -name '*.cpp' \))
 
 DIFF_FILES := $(addsuffix .diff,$(FILES_TO_FORMAT))
 
@@ -71,17 +68,18 @@ BUILD_CONFIG_STR := $(shell echo $(CPPFLAGS) | sed 's- -\\\\x20-g')
 override CPPFLAGS := \
 	$(INCLUDES) \
 	-D VERSION=\"$(VERSION)\" \
-	-D SPIFFS_VERSION=\"$(SPIFFS_VERSION)\" \
+	-D LITTLEFS_VERSION=\"$(LITTLEFS_VERSION)\" \
 	-D BUILD_CONFIG=\"$(BUILD_CONFIG_STR)\" \
 	-D BUILD_CONFIG_NAME=\"$(BUILD_CONFIG_NAME)\" \
 	-D __NO_INLINE__ \
+	-D LFS_NAME_MAX=32 \
 	$(CPPFLAGS)
 
 override CFLAGS := -std=gnu99 -Os -Wall $(TARGET_CFLAGS) $(CFLAGS)
 override CXXFLAGS := -std=gnu++11 -Os -Wall $(TARGET_CXXFLAGS) $(CXXFLAGS)
 override LDFLAGS := $(TARGET_LDFLAGS) $(LDFLAGS)
 
-DIST_NAME := mkspiffs-$(VERSION)$(BUILD_CONFIG_NAME)-$(TARGET_OS)
+DIST_NAME := mklittlefs-$(VERSION)$(BUILD_CONFIG_NAME)-$(TARGET_OS)
 DIST_DIR := $(DIST_NAME)
 DIST_ARCHIVE := $(DIST_NAME).$(ARCHIVE_EXTENSION)
 
@@ -107,42 +105,7 @@ $(DIST_DIR):
 clean:
 	@rm -f $(TARGET) $(OBJ) $(DIFF_FILES)
 
-SPIFFS_TEST_FS_CONFIG := -s 0x100000 -p 512 -b 0x2000
-
-test: $(TARGET)
-	mkdir -p spiffs_t
-	cp spiffs/src/*.h spiffs_t/
-	cp spiffs/src/*.c spiffs_t/
-	rm -rf spiffs_t/.git
-	rm -f spiffs_t/.DS_Store
-	ls -1 spiffs_t > out.list0
-	touch spiffs_t/.DS_Store
-	mkdir -p spiffs_t/.git
-	touch spiffs_t/.git/foo
-	./mkspiffs -c spiffs_t $(SPIFFS_TEST_FS_CONFIG) out.spiffs_t | sort | sed s/^\\/// > out.list1
-	./mkspiffs -u spiffs_u $(SPIFFS_TEST_FS_CONFIG) out.spiffs_t | sort | sed s/^\\/// > out.list_u
-	./mkspiffs -l $(SPIFFS_TEST_FS_CONFIG) out.spiffs_t | cut -f 2 | sort | sed s/^\\/// > out.list2
-	awk 'BEGIN{RS="\1";ORS="";getline;gsub("\r","");print>ARGV[1]}' out.list0 out.list1 out.list2
-	diff out.list0 out.list1
-	diff out.list0 out.list2
-	rm -rf spiffs_t/.git
-	rm -f spiffs_t/.DS_Store
-	diff spiffs_t spiffs_u
-	rm -f out.{list0,list1,list2,list_u,spiffs_t}
-	rm -R spiffs_u spiffs_t
-
 format-check: $(DIFF_FILES)
 	@rm -f $(DIFF_FILES)
-
-$(DIFF_FILES): %.diff: %
-	@./format.sh < $< >$<.new
-	@diff $<.new $< >$@ || ( \
-		echo "File $^ not formatted correctly. Please use format.sh to re-format it." && \
-		echo "Here's the diff that caused an error:" && \
-		echo "" && \
-		cat $@ && \
-		rm $@ $<.new && \
-		exit 1 )
-	@rm -f $@ $<.new
 
 .PHONY: all clean dist format-check

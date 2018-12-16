@@ -1,14 +1,15 @@
 //
 //  main.cpp
-//  make_spiffs
+//  make_littlefs
 //
-//  Created by Ivan Grokhotkov on 13/05/15.
-//  Copyright (c) 2015 Ivan Grokhotkov. All rights reserved.
+//  Created by Earle F. Philhower, III on December 15, 2018
+//  Derived from mkspiffs:
+//  | Created by Ivan Grokhotkov on 13/05/15.
+//  | Copyright (c) 2015 Ivan Grokhotkov. All rights reserved.
 //
 #define TCLAP_SETBASE_ZERO 1
 
 #include <iostream>
-#include "spiffs.h"
 #include <vector>
 #include <dirent.h>
 #include <sys/types.h>
@@ -21,26 +22,22 @@
 #include "tclap/CmdLine.h"
 #include "tclap/UnlabeledValueArg.h"
 
-#ifdef _WIN32
-#include <direct.h>
-#endif
+extern "C" {
+#define LFS_NAME_MAX 32
+#include "littlefs/lfs.h"
+}
+
 
 static std::vector<uint8_t> s_flashmem;
 
 static std::string s_dirName;
 static std::string s_imageName;
-static int s_imageSize;
-static int s_pageSize;
-static int s_blockSize;
+static uint32_t s_imageSize;
+static uint32_t s_pageSize;
+static uint32_t s_blockSize;
 
-enum Action { ACTION_NONE, ACTION_PACK, ACTION_UNPACK, ACTION_LIST, ACTION_VISUALIZE };
+enum Action { ACTION_NONE, ACTION_PACK, ACTION_UNPACK, ACTION_LIST };
 static Action s_action = ACTION_NONE;
-
-static spiffs s_fs;
-
-static std::vector<uint8_t> s_spiffsWorkBuf;
-static std::vector<uint8_t> s_spiffsFds;
-static std::vector<uint8_t> s_spiffsCache;
 
 static int s_debugLevel = 0;
 static bool s_addAllFiles;
@@ -53,102 +50,105 @@ static const char* ignored_file_names[] = {
     ".gitmodules"
 };
 
-static s32_t api_spiffs_read(u32_t addr, u32_t size, u8_t *dst)
+int lfs_flash_read(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size)
 {
-    memcpy(dst, &s_flashmem[0] + addr, size);
-    return SPIFFS_OK;
+  memcpy(buffer, &s_flashmem[0] + c->block_size * block + off, size);
+  return 0;
 }
 
-static s32_t api_spiffs_write(u32_t addr, u32_t size, u8_t *src)
+int lfs_flash_prog(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, const void *buffer, lfs_size_t size)
 {
-    memcpy(&s_flashmem[0] + addr, src, size);
-    return SPIFFS_OK;
+  memcpy(&s_flashmem[0] + block * c->block_size + off, buffer, size);
+  return 0;
 }
 
-static s32_t api_spiffs_erase(u32_t addr, u32_t size)
+int lfs_flash_erase(const struct lfs_config *c, lfs_block_t block)
 {
-    memset(&s_flashmem[0] + addr, 0xff, size);
-    return SPIFFS_OK;
+  memset(&s_flashmem[0] + block * c->block_size, 0, c->block_size);
+  return 0;
 }
 
-static int checkArgs();
-static size_t getFileSize(FILE* fp);
-
-
-//implementation
-
-int spiffsTryMount()
-{
-    spiffs_config cfg = {0};
-
-    cfg.phys_addr = 0x0000;
-    cfg.phys_size = (u32_t) s_flashmem.size();
-
-    cfg.phys_erase_block = s_blockSize;
-    cfg.log_block_size = s_blockSize;
-    cfg.log_page_size = s_pageSize;
-
-    cfg.hal_read_f = api_spiffs_read;
-    cfg.hal_write_f = api_spiffs_write;
-    cfg.hal_erase_f = api_spiffs_erase;
-
-    const int maxOpenFiles = 4;
-    s_spiffsWorkBuf.resize(s_pageSize * 2);
-    s_spiffsFds.resize(32 * maxOpenFiles);
-    s_spiffsCache.resize((32 + s_pageSize) * maxOpenFiles);
-
-    return SPIFFS_mount(&s_fs, &cfg,
-                        &s_spiffsWorkBuf[0],
-                        &s_spiffsFds[0], s_spiffsFds.size(),
-                        &s_spiffsCache[0], s_spiffsCache.size(),
-                        NULL);
+int lfs_flash_sync(const struct lfs_config *c) {
+  (void) c;
+  return 0;
 }
 
-bool spiffsMount(bool printError = true)
+
+
+
+// Implementation
+
+static lfs_t s_fs;
+static lfs_config s_cfg;
+bool s_mounted = false;
+
+void setLfsConfig()
 {
-    if (SPIFFS_mounted(&s_fs)) {
-        return true;
-    }
-    int res = spiffsTryMount();
-    if (res != SPIFFS_OK) {
-        if (printError) {
-            std::cerr << "SPIFFS mount failed with error: " << res << std::endl;
-        }
-        return false;
-    }
+  memset(&s_fs, 0, sizeof(s_fs));
+  memset(&s_cfg, 0, sizeof(s_cfg));
+  s_cfg.read  = lfs_flash_read;
+  s_cfg.prog  = lfs_flash_prog;
+  s_cfg.erase = lfs_flash_erase;
+  s_cfg.sync  = lfs_flash_sync;
+
+  s_cfg.read_size = s_blockSize;
+  s_cfg.prog_size = s_blockSize;
+  s_cfg.block_size = s_blockSize;
+  s_cfg.block_count = s_flashmem.size() / s_blockSize;
+  s_cfg.lookahead = 128;
+}
+
+int spiffsTryMount() {
+  setLfsConfig();
+  int ret = lfs_mount(&s_fs, &s_cfg);
+  if (ret) {
+    s_mounted = false;
+    return -1;
+  }
+  s_mounted = true;
+  return 0;
+}
+
+bool spiffsMount(){
+  if (s_mounted)
     return true;
+  int res = spiffsTryMount();
+  return (res == 0);
 }
 
-bool spiffsFormat()
-{
-    spiffsMount(false);
-    SPIFFS_unmount(&s_fs);
-    int formated = SPIFFS_format(&s_fs);
-    if (formated != SPIFFS_OK) {
-        return false;
-    }
-    return (spiffsTryMount() == SPIFFS_OK);
+void spiffsUnmount() {
+  if (s_mounted) {
+    lfs_unmount(&s_fs);
+    s_mounted = false;
+  }
 }
 
-void spiffsUnmount()
-{
-    if (SPIFFS_mounted(&s_fs)) {
-        SPIFFS_unmount(&s_fs);
-    }
+bool spiffsFormat(){
+  spiffsUnmount();
+  setLfsConfig();
+  int formated = lfs_format(&s_fs, &s_cfg);
+  if(formated != 0)
+    return false;
+  return (spiffsTryMount() == 0);
 }
 
-int addFile(char* name, const char* path)
-{
+int addFile(char* name, const char* path) {
     FILE* src = fopen(path, "rb");
     if (!src) {
         std::cerr << "error: failed to open " << path << " for reading" << std::endl;
         return 1;
     }
 
-    spiffs_file dst = SPIFFS_open(&s_fs, name, SPIFFS_CREAT | SPIFFS_TRUNC | SPIFFS_RDWR, 0);
-
+    lfs_file_t dst;
+    int ret = lfs_file_open(&s_fs, &dst, name, LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
+    if (ret < 0) {
+        std::cerr << "unable to open '" << name << "." << std::endl;
+        return 1;
+    }
     // read file size
-    size_t size = getFileSize(src);
+    fseek(src, 0, SEEK_END);
+    size_t size = ftell(src);
+    fseek(src, 0, SEEK_SET);
 
     if (s_debugLevel > 0) {
         std::cout << "file size: " << size << std::endl;
@@ -156,19 +156,19 @@ int addFile(char* name, const char* path)
 
     size_t left = size;
     uint8_t data_byte;
-    while (left > 0) {
+    while (left > 0){
         if (1 != fread(&data_byte, 1, 1, src)) {
             std::cerr << "fread error!" << std::endl;
 
             fclose(src);
-            SPIFFS_close(&s_fs, dst);
+            lfs_file_close(&s_fs, &dst);
             return 1;
         }
-        int res = SPIFFS_write(&s_fs, dst, &data_byte, 1);
+        int res = lfs_file_write(&s_fs, &dst, &data_byte, 1);
         if (res < 0) {
-            std::cerr << "SPIFFS_write error(" << s_fs.err_code << "): ";
+            std::cerr << "lfs_write error(" << res << "): ";
 
-            if (s_fs.err_code == SPIFFS_ERR_FULL) {
+            if (res == LFS_ERR_NOSPC) {
                 std::cerr << "File system is full." << std::endl;
             } else {
                 std::cerr << "unknown";
@@ -180,20 +180,19 @@ int addFile(char* name, const char* path)
             }
 
             fclose(src);
-            SPIFFS_close(&s_fs, dst);
+            lfs_file_close(&s_fs, &dst);
             return 1;
         }
         left -= 1;
     }
 
-    SPIFFS_close(&s_fs, dst);
+    lfs_file_close(&s_fs, &dst);
     fclose(src);
 
     return 0;
 }
 
-int addFiles(const char* dirname, const char* subPath)
-{
+int addFiles(const char* dirname, const char* subPath) {
     DIR *dir;
     struct dirent *ent;
     bool error = false;
@@ -239,12 +238,15 @@ int addFiles(const char* dirname, const char* subPath)
                     newSubPath += ent->d_name;
                     newSubPath += "/";
 
-                    if (addFiles(dirname, newSubPath.c_str()) != 0) {
+                    if (addFiles(dirname, newSubPath.c_str()) != 0)
+                    {
                         std::cerr << "Error for adding content from " << ent->d_name << "!" << std::endl;
                     }
 
                     continue;
-                } else {
+                }
+                else
+                {
                     std::cerr << "skipping " << ent->d_name << std::endl;
                     continue;
                 }
@@ -274,22 +276,29 @@ int addFiles(const char* dirname, const char* subPath)
     return (error) ? 1 : 0;
 }
 
-void listFiles()
-{
-    spiffs_DIR dir;
-    spiffs_dirent ent;
+void listFiles() {
+    int ret;
+    lfs_dir_t dir;
+    lfs_info it;
 
-    SPIFFS_opendir(&s_fs, 0, &dir);
-    spiffs_dirent* it;
-    while (true) {
-        it = SPIFFS_readdir(&dir, &ent);
-        if (!it) {
-            break;
-        }
-
-        std::cout << it->size << '\t' << it->name << std::endl;
+    setLfsConfig();
+    ret = lfs_mount(&s_fs, &s_cfg);
+    ret = lfs_dir_open(&s_fs, &dir, "/");
+    if (ret < 0) {
+        std::cerr << "unable to open root directory!" << std::endl;
+        return;
     }
-    SPIFFS_closedir(&dir);
+//    while (true) {
+for (int i=0; i<10; i++) {
+        int res = lfs_dir_read(&s_fs, &dir, &it);
+        if (res <= 0)
+            break;
+
+        std::cout << it.size << '\t' << it.name << std::endl;
+    }
+    lfs_dir_close(&s_fs, &dir);
+    lfs_unmount(&s_fs);
+    s_mounted = false;
 }
 
 /**
@@ -299,8 +308,7 @@ void listFiles()
  *
  * @author Pascal Gollor (http://www.pgollor.de/cms/)
  */
-bool dirExists(const char* path)
-{
+bool dirExists(const char* path) {
     DIR *d = opendir(path);
 
     if (d) {
@@ -318,21 +326,20 @@ bool dirExists(const char* path)
  *
  * @author Pascal Gollor (http://www.pgollor.de/cms/)
  */
-bool dirCreate(const char* path)
-{
+bool dirCreate(const char* path) {
     // Check if directory also exists.
     if (dirExists(path)) {
-        return false;
+	    return false;
     }
 
     // platform stuff...
 #if defined(_WIN32)
-    if (_mkdir(path) != 0) {
+    if (mkdir(path) != 0) {
 #else
     if (mkdir(path, S_IRWXU | S_IXGRP | S_IRGRP | S_IROTH | S_IXOTH) != 0) {
 #endif
-        std::cerr << "Can not create directory!!!" << std::endl;
-        return false;
+	    std::cerr << "Can not create directory!!!" << std::endl;
+		return false;
     }
 
     return true;
@@ -346,25 +353,29 @@ bool dirCreate(const char* path)
  *
  * @author Pascal Gollor (http://www.pgollor.de/cms/)
  */
-bool unpackFile(spiffs_dirent *spiffsFile, const char *destPath)
-{
-    u8_t buffer[spiffsFile->size];
+bool unpackFile(lfs_info *spiffsFile, const char *destPath) {
+    uint8_t buffer[spiffsFile->size];
     std::string filename = (const char*)(spiffsFile->name);
 
     // Open file from spiffs file system.
-    spiffs_file src = SPIFFS_open(&s_fs, (char *)(filename.c_str()), SPIFFS_RDONLY, 0);
+    lfs_file_t src;
+    int ret = lfs_file_open(&s_fs, &src, (char *)(filename.c_str()), LFS_O_RDONLY);
+    if (ret < 0) {
+        std::cerr << "unable to open '" << filename.c_str() << "." << std::endl;
+        return false;
+    }
 
     // read content into buffer
-    SPIFFS_read(&s_fs, src, buffer, spiffsFile->size);
+    lfs_file_read(&s_fs, &src, buffer, spiffsFile->size);
 
     // Close spiffs file.
-    SPIFFS_close(&s_fs, src);
+    lfs_file_close(&s_fs, &src);
 
     // Open file.
     FILE* dst = fopen(destPath, "wb");
 
     // Write content into file.
-    fwrite(buffer, sizeof(u8_t), sizeof(buffer), dst);
+    fwrite(buffer, sizeof(uint8_t), sizeof(buffer), dst);
 
     // Close file.
     fclose(dst);
@@ -382,10 +393,9 @@ bool unpackFile(spiffs_dirent *spiffsFile, const char *destPath)
  *
  * todo: Do unpack stuff for directories.
  */
-bool unpackFiles(std::string sDest)
-{
-    spiffs_DIR dir;
-    spiffs_dirent ent;
+bool unpackFiles(std::string sDest) {
+    lfs_dir_t dir;
+    lfs_info ent;
 
     // Add "./" to path if is not given.
     if (sDest.find("./") == std::string::npos && sDest.find("/") == std::string::npos) {
@@ -403,14 +413,13 @@ bool unpackFiles(std::string sDest)
     }
 
     // Open directory.
-    SPIFFS_opendir(&s_fs, 0, &dir);
+    lfs_dir_open(&s_fs, &dir, "");
 
     // Read content from directory.
-    spiffs_dirent* it = SPIFFS_readdir(&dir, &ent);
-    while (it) {
+    while (lfs_dir_read(&s_fs, &dir, &ent)==0) {
         // Check if content is a file.
-        if ((int)(it->type) == 1) {
-            std::string name = (const char*)(it->name);
+        if ((int)(ent.type) == LFS_TYPE_REG) {
+            std::string name = (const char*)(ent.name);
             std::string sDestFilePath = sDest + name;
             size_t pos = name.find_first_of("/", 1);
 
@@ -431,52 +440,33 @@ bool unpackFiles(std::string sDest)
             }
 
             // Unpack file to destination directory.
-            if (! unpackFile(it, sDestFilePath.c_str()) ) {
-                std::cout << "Can not unpack " << it->name << "!" << std::endl;
+            if (! unpackFile(&ent, sDestFilePath.c_str()) ) {
+                std::cout << "Can not unpack " << ent.name << "!" << std::endl;
                 return false;
             }
 
             // Output stuff.
             std::cout
-                    << it->name
-                    << '\t'
-                    << " > " << sDestFilePath
-                    << '\t'
-                    << "size: " << it->size << " Bytes"
-                    << std::endl;
+                << ent.name
+                << '\t'
+                << " > " << sDestFilePath
+                << '\t'
+                << "size: " << ent.size << " Bytes"
+                << std::endl;
         }
 
         // Get next file handle.
-        it = SPIFFS_readdir(&dir, &ent);
     } // end while
 
     // Close directory.
-    SPIFFS_closedir(&dir);
+    lfs_dir_close(&s_fs, &dir);
 
     return true;
 }
 
 // Actions
 
-int actionPack()
-{
-    if (!dirExists(s_dirName.c_str())) {
-        std::cerr << "error: can't read source directory" << std::endl;
-        return 1;
-    }
-
-    if (s_imageSize == 0) {
-        s_imageSize = 0x10000;
-        if (s_debugLevel > 0) {
-            std::cout << "image size not specifed, using default: " << s_imageSize << std::endl;
-        }
-    }
-
-    int err = checkArgs();
-    if (err != 0) {
-        return err;
-    }
-
+int actionPack() {
     s_flashmem.resize(s_imageSize, 0xff);
 
     FILE* fdres = fopen(s_imageName.c_str(), "wb");
@@ -489,18 +479,10 @@ int actionPack()
     int result = addFiles(s_dirName.c_str(), "/");
     spiffsUnmount();
 
-    fwrite(&s_flashmem[0], 4, s_flashmem.size() / 4, fdres);
+    fwrite(&s_flashmem[0], 4, s_flashmem.size()/4, fdres);
     fclose(fdres);
 
     return result;
-}
-
-static size_t getFileSize(FILE* fp)
-{
-    fseek(fp, 0L, SEEK_END);
-    size_t size = (size_t) ftell(fp);
-    fseek(fp, 0L, SEEK_SET);
-    return size;
 }
 
 /**
@@ -509,9 +491,9 @@ static size_t getFileSize(FILE* fp)
  *
  * @author Pascal Gollor (http://www.pgollor.de/cms/)
  */
-int actionUnpack(void)
-{
+int actionUnpack(void) {
     int ret = 0;
+    s_flashmem.resize(s_imageSize, 0xff);
 
     // open spiffs image
     FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
@@ -520,31 +502,17 @@ int actionUnpack(void)
         return 1;
     }
 
-    if (s_imageSize == 0) {
-        s_imageSize = getFileSize(fdsrc);
-    }
-
-    int err = checkArgs();
-    if (err != 0) {
-        return err;
-    }
-
-    s_flashmem.resize(s_imageSize, 0xff);
-
     // read content into s_flashmem
-    if (fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc) != s_flashmem.size() / 4) {
-        std::cerr << "error: couldn't read image" << std::endl;
+    if (s_flashmem.size()/4 != fread(&s_flashmem[0], 4, s_flashmem.size()/4, fdsrc)) {
+        std::cerr << "error: couldn't read image file" << std::endl;
         return 1;
     }
 
-    // close file handle
+    // close fiel handle
     fclose(fdsrc);
 
     // mount file system
-    if (!spiffsMount()) {
-        std::cerr << "error: failed to mount image" << std::endl;
-        return 1;
-    }
+    spiffsMount();
 
     // unpack files
     if (! unpackFiles(s_dirName)) {
@@ -558,123 +526,32 @@ int actionUnpack(void)
 }
 
 
-int actionList()
-{
+int actionList() {
+    s_flashmem.resize(s_imageSize, 0xff);
+
     FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
     if (!fdsrc) {
         std::cerr << "error: failed to open image file" << std::endl;
         return 1;
     }
-
-    if (s_imageSize == 0) {
-        s_imageSize = getFileSize(fdsrc);
-    }
-
-    int err = checkArgs();
-    if (err != 0) {
-        return err;
-    }
-
-    s_flashmem.resize(s_imageSize, 0xff);
-
-    if (fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc) != s_flashmem.size() / 4) {
-        std::cerr << "error: couldn't read image" << std::endl;
+    if (s_flashmem.size()/4 != fread(&s_flashmem[0], 4, s_flashmem.size()/4, fdsrc)) {
+        std::cerr << "error: couldn't read image file" << std::endl;
         return 1;
     }
     fclose(fdsrc);
-
-    if (!spiffsMount()) {
-        std::cerr << "error: failed to mount image" << std::endl;
-        return 1;
-    }
-
+    spiffsMount();
     listFiles();
     spiffsUnmount();
     return 0;
 }
 
-int actionVisualize()
-{
-    FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
-    if (!fdsrc) {
-        std::cerr << "error: failed to open image file" << std::endl;
-        return 1;
-    }
-
-    if (s_imageSize == 0) {
-        s_imageSize = getFileSize(fdsrc);
-    }
-
-    int err = checkArgs();
-    if (err != 0) {
-        return err;
-    }
-
-    s_flashmem.resize(s_imageSize, 0xff);
-
-
-    if (fread(&s_flashmem[0], 4, s_flashmem.size() / 4, fdsrc) != s_flashmem.size() / 4) {
-        std::cerr << "error: couldn't read image" << std::endl;
-        return 1;
-    }
-    fclose(fdsrc);
-
-    if (!spiffsMount()) {
-        std::cerr << "error: failed to mount image" << std::endl;
-        return 1;
-    }
-
-    SPIFFS_vis(&s_fs);
-    uint32_t total, used;
-    SPIFFS_info(&s_fs, &total, &used);
-    std::cout << "total: " << total <<  std::endl << "used: " << used << std::endl;
-    spiffsUnmount();
-
-    return 0;
-}
-
-#define PRINT_INT_MACRO(def_name) \
-    std::cout << "  " # def_name ": " << def_name << std::endl;
-
-class CustomOutput : public TCLAP::StdOutput
-{
-public:
-    virtual void version(TCLAP::CmdLineInterface& c)
-    {
-        std::cout << "mkspiffs ver. " VERSION << std::endl;
-        const char* configName = BUILD_CONFIG_NAME;
-        if (configName[0] == '-') {
-            configName += 1;
-        }
-        std::cout << "Build configuration name: " << configName << std::endl;
-        std::cout << "SPIFFS ver. " SPIFFS_VERSION << std::endl;
-        const char* buildConfig = BUILD_CONFIG;
-        std::cout << "Extra build flags: " << (strlen(buildConfig) ? buildConfig : "(none)") << std::endl;
-        std::cout << "SPIFFS configuration:" << std::endl;
-        PRINT_INT_MACRO(SPIFFS_OBJ_NAME_LEN);
-        PRINT_INT_MACRO(SPIFFS_OBJ_META_LEN);
-        PRINT_INT_MACRO(SPIFFS_USE_MAGIC);
-#if SPIFFS_USE_MAGIC == 1
-        PRINT_INT_MACRO(SPIFFS_USE_MAGIC_LENGTH);
-#endif
-        PRINT_INT_MACRO(SPIFFS_ALIGNED_OBJECT_INDEX_TABLES);
-    }
-};
-
-#undef PRINT_INT_MACRO
-
-void processArgs(int argc, const char** argv)
-{
+void processArgs(int argc, const char** argv) {
     TCLAP::CmdLine cmd("", ' ', VERSION);
-    CustomOutput output;
-    cmd.setOutput(&output);
-
     TCLAP::ValueArg<std::string> packArg( "c", "create", "create spiffs image from a directory", true, "", "pack_dir");
     TCLAP::ValueArg<std::string> unpackArg( "u", "unpack", "unpack spiffs image to a directory", true, "", "dest_dir");
     TCLAP::SwitchArg listArg( "l", "list", "list files in spiffs image", false);
-    TCLAP::SwitchArg visualizeArg( "i", "visualize", "visualize spiffs image", false);
     TCLAP::UnlabeledValueArg<std::string> outNameArg( "image_file", "spiffs image file", true, "", "image_file"  );
-    TCLAP::ValueArg<int> imageSizeArg( "s", "size", "fs image size, in bytes", false, 0, "number" );
+    TCLAP::ValueArg<int> imageSizeArg( "s", "size", "fs image size, in bytes", false, 0x10000, "number" );
     TCLAP::ValueArg<int> pageSizeArg( "p", "page", "fs page size, in bytes", false, 256, "number" );
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
     TCLAP::SwitchArg addAllFilesArg( "a", "all-files", "when creating an image, include files which are normally ignored; currently only applies to '.DS_Store' files and '.git' directories", false);
@@ -685,13 +562,13 @@ void processArgs(int argc, const char** argv)
     cmd.add( blockSizeArg );
     cmd.add( addAllFilesArg );
     cmd.add( debugArg );
-    std::vector<TCLAP::Arg*> args = {&packArg, &unpackArg, &listArg, &visualizeArg};
+    std::vector<TCLAP::Arg*> args = {&packArg, &unpackArg, &listArg};
     cmd.xorAdd( args );
     cmd.add( outNameArg );
     cmd.parse( argc, argv );
 
     if (debugArg.getValue() > 0) {
-        std::cerr << "Debug output enabled" << std::endl;
+        std::cout << "Debug output enabled" << std::endl;
         s_debugLevel = debugArg.getValue();
     }
 
@@ -703,8 +580,6 @@ void processArgs(int argc, const char** argv)
         s_action = ACTION_UNPACK;
     } else if (listArg.isSet()) {
         s_action = ACTION_LIST;
-    } else if (visualizeArg.isSet()) {
-        s_action = ACTION_VISUALIZE;
     }
 
     s_imageName = outNameArg.getValue();
@@ -714,45 +589,12 @@ void processArgs(int argc, const char** argv)
     s_addAllFiles = addAllFilesArg.isSet();
 }
 
-static int checkArgs()
-{
-    // Argument checks don't use TCLAP's Constraint interface because
-    // a) we need to check one argument against another, while Constraints only check
-    // each argument individually, and b) image size might only be known when image
-    // file is opened.
-
-    if (s_imageSize < 0 || s_pageSize < 0 || s_blockSize < 0) {
-        std::cerr << "error: Image, block, page sizes should not be negative" << std::endl;
-        return 1;
-    }
-
-    if (s_imageSize % s_blockSize != 0) {
-        std::cerr << "error: Image size should be a multiple of block size" << std::endl;
-        return 1;
-    }
-
-    if (s_blockSize % s_pageSize != 0) {
-        std::cerr << "error: Block size should be a multiple of page size" << std::endl;
-        return 1;
-    }
-
-    const int physicalFlashEraseBlockSize = 4096;
-    if (s_blockSize % physicalFlashEraseBlockSize != 0) {
-        std::cerr << "error: Block size should be multiple of flash erase block size (" <<
-                     physicalFlashEraseBlockSize << ")" << std::endl;
-        return 1;
-    }
-
-    return 0;
-}
-
-int main(int argc, const char * argv[])
-{
+int main(int argc, const char * argv[]) {
 
     try {
         processArgs(argc, argv);
-    } catch (...) {
-        std::cerr << "error: Invalid arguments" << std::endl;
+    } catch(...) {
+        std::cerr << "Invalid arguments" << std::endl;
         return 1;
     }
 
@@ -761,13 +603,10 @@ int main(int argc, const char * argv[])
         return actionPack();
         break;
     case ACTION_UNPACK:
-        return actionUnpack();
+    	return actionUnpack();
         break;
     case ACTION_LIST:
         return actionList();
-        break;
-    case ACTION_VISUALIZE:
-        return actionVisualize();
         break;
     default:
         break;
