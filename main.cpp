@@ -288,8 +288,7 @@ void listFiles() {
         std::cerr << "unable to open root directory!" << std::endl;
         return;
     }
-//    while (true) {
-for (int i=0; i<10; i++) {
+    while (true) {
         int res = lfs_dir_read(&s_fs, &dir, &it);
         if (res <= 0)
             break;
