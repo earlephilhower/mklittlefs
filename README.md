@@ -81,7 +81,7 @@ $ make dist CPPFLAGS="-DLFS_NAME_MAX=128" BUILD_CONFIG_NAME=-custom
 To check which options were set when building mklittlefs, use `--version` command:
 
 ```
-$ littlefs --version
+$ mklittlefs --version
 
 ./mklittlefs  version: 0.2.3-6-g9a0e072
 ```

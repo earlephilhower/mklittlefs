@@ -293,6 +293,11 @@ void listFiles() {
         if (res <= 0)
             break;
 
+        // Ignore special dir entries
+        if ((strcmp(it.name, ".") == 0) || (strcmp(it.name, "..") == 0)) {
+            continue;
+        }
+
         std::cout << it.size << '\t' << it.name << std::endl;
     }
     lfs_dir_close(&s_fs, &dir);
@@ -415,7 +420,12 @@ bool unpackFiles(std::string sDest) {
     lfs_dir_open(&s_fs, &dir, "");
 
     // Read content from directory.
-    while (lfs_dir_read(&s_fs, &dir, &ent)==0) {
+    while (lfs_dir_read(&s_fs, &dir, &ent)==1) {
+        // Ignore special dir entries
+        if ((strcmp(ent.name, ".") == 0) || (strcmp(ent.name, "..") == 0)) {
+            continue;
+        }
+
         // Check if content is a file.
         if ((int)(ent.type) == LFS_TYPE_REG) {
             std::string name = (const char*)(ent.name);
