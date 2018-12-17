@@ -46,7 +46,7 @@ Where:
      Displays usage information and exits.
 
    <image_file>
-     (required)  spiffs image file
+     (required)  LittleFS image file
 
 
 ```
@@ -62,7 +62,7 @@ $ make dist
 
 ## LittleFS configuration
 
-Some LittleFS options which are set at mkspiffs build time affect the format of the generated filesystem image. Make sure such options are set to the same values when builing mkspiffs and when building the application which uses SPIFFS.
+Some LittleFS options which are set at mklittlefs build time affect the format of the generated filesystem image. Make sure such options are set to the same values when builing mklittlefs and when building the application which uses LittleFS.
 
 These options include:
 
