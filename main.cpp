@@ -74,31 +74,6 @@ int lfs_flash_sync(const struct lfs_config *c) {
 }
 
 
-// Because "/" is an actual full-fledged dir separator in LFS, we need to
-// replace it with a reserved character to avoid dir-not-found/etc.
-// problems when using ported SPIFFS apps.
-static char *spiffsNameToLFS(const char *src, char *dst) {
-    char *ret = dst;
-    char c;
-    while (0 != (c = *(src++))) {
-        *(dst++) = (c=='/')?0x01:c;
-    }
-    *dst = 0;
-    // Strip leading "/"s
-    while ((*ret) == 0x01) ret++;
-    return ret;
-}
-static char *lfsNameToSPIFFS(const char *src, char *dst) {
-    char *ret = dst;
-    char c;
-    while (0 != (c = *(src++))) {
-        *(dst++) = (c==0x01)?'/':c;
-    }
-    *dst = 0;
-    return ret;
-}
-
-
 // Implementation
 
 static lfs_t s_fs;
@@ -162,9 +137,8 @@ int addFile(char* name, const char* path) {
         return 1;
     }
 
-    char lfsName[LFS_NAME_MAX+1];
     lfs_file_t dst;
-    int ret = lfs_file_open(&s_fs, &dst, spiffsNameToLFS(name, lfsName), LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
+    int ret = lfs_file_open(&s_fs, &dst, name, LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
     if (ret < 0) {
         std::cerr << "unable to open '" << name << "." << std::endl;
         return 1;
@@ -322,7 +296,7 @@ void listFiles() {
             continue;
         }
 
-        std::cout << it.size << '\t' << lfsNameToSPIFFS(it.name, it.name) << std::endl;
+        std::cout << it.size << '\t' << it.name << std::endl;
     }
     lfs_dir_close(&s_fs, &dir);
     lfs_unmount(&s_fs);
@@ -452,9 +426,7 @@ bool unpackFiles(std::string sDest) {
 
         // Check if content is a file.
         if ((int)(ent.type) == LFS_TYPE_REG) {
-            char realName[LFS_NAME_MAX+1];
-            lfsNameToSPIFFS(ent.name, realName);
-            std::string name = (const char*)(realName);
+            std::string name = (const char*)(ent.name);
             std::string sDestFilePath = sDest + name;
             size_t pos = name.find_first_of("/", 1);
 
@@ -482,7 +454,7 @@ bool unpackFiles(std::string sDest) {
 
             // Output stuff.
             std::cout
-                << realName
+                << ent.name
                 << '\t'
                 << " > " << sDestFilePath
                 << '\t'

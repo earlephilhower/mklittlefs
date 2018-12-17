@@ -1,6 +1,6 @@
 # mklittlefs
 Tool to build and unpack [littlefs](https://github.com/ARMmbed/littlefs) images.
-
+Based off of [mkspiffs](https://github.com/igrr/mkspiffs) by Ivan Grokhotkov.
 
 ## Usage
 
