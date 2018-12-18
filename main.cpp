@@ -96,7 +96,7 @@ void setLfsConfig()
   s_cfg.lookahead = 128;
 }
 
-int spiffsTryMount() {
+int littlefsTryMount() {
   setLfsConfig();
   int ret = lfs_mount(&s_fs, &s_cfg);
   if (ret) {
@@ -107,27 +107,27 @@ int spiffsTryMount() {
   return 0;
 }
 
-bool spiffsMount(){
+bool littlefsMount(){
   if (s_mounted)
     return true;
-  int res = spiffsTryMount();
+  int res = littlefsTryMount();
   return (res == 0);
 }
 
-void spiffsUnmount() {
+void littlefsUnmount() {
   if (s_mounted) {
     lfs_unmount(&s_fs);
     s_mounted = false;
   }
 }
 
-bool spiffsFormat(){
-  spiffsUnmount();
+bool littlefsFormat(){
+  littlefsUnmount();
   setLfsConfig();
   int formated = lfs_format(&s_fs, &s_cfg);
   if(formated != 0)
     return false;
-  return (spiffsTryMount() == 0);
+  return (littlefsTryMount() == 0);
 }
 
 int addFile(char* name, const char* path) {
@@ -137,6 +137,17 @@ int addFile(char* name, const char* path) {
         return 1;
     }
 
+    // Make any subdirs required to place this file
+    char pathStr[LFS_NAME_MAX+1];
+    strcpy(pathStr, name); // Already know path length < LFS_NAME_MAX
+    // Make dirs up to the final fnamepart
+    char *ptr = strchr(pathStr, '/');
+    while (ptr) {
+       *ptr = 0;
+       lfs_mkdir(&s_fs, pathStr); // Ignore error, we'll catch later if it's fatal
+       *ptr = '/';
+       ptr = strchr(ptr+1, '/');
+    }
     lfs_file_t dst;
     int ret = lfs_file_open(&s_fs, &dst, name, LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
     if (ret < 0) {
@@ -274,16 +285,14 @@ int addFiles(const char* dirname, const char* subPath) {
     return (error) ? 1 : 0;
 }
 
-void listFiles() {
+void listFiles(const char *path) {
     int ret;
     lfs_dir_t dir;
     lfs_info it;
 
-    setLfsConfig();
-    ret = lfs_mount(&s_fs, &s_cfg);
-    ret = lfs_dir_open(&s_fs, &dir, "/");
+    ret = lfs_dir_open(&s_fs, &dir, path);
     if (ret < 0) {
-        std::cerr << "unable to open root directory!" << std::endl;
+        std::cerr << "unable to open directory '" << path << "'" << std::endl;
         return;
     }
     while (true) {
@@ -296,11 +305,15 @@ void listFiles() {
             continue;
         }
 
-        std::cout << it.size << '\t' << it.name << std::endl;
+        if (it.type == LFS_TYPE_DIR) {
+            char newpath[LFS_NAME_MAX+1];
+            sprintf(newpath, "%s/%s", path, it.name);
+            listFiles(newpath);
+        } else {
+            std::cout << it.size << '\t' << path << "/" << it.name << std::endl;
+        }
     }
     lfs_dir_close(&s_fs, &dir);
-    lfs_unmount(&s_fs);
-    s_mounted = false;
 }
 
 /**
@@ -349,17 +362,17 @@ bool dirCreate(const char* path) {
 
 /**
  * @brief Unpack file from file system.
- * @param spiffsFile SPIFFS dir entry pointer.
+ * @param littlefsFile SPIFFS dir entry pointer.
  * @param destPath Destination file path path.
  * @return True or false.
  *
  * @author Pascal Gollor (http://www.pgollor.de/cms/)
  */
-bool unpackFile(lfs_info *spiffsFile, const char *destPath) {
-    uint8_t buffer[spiffsFile->size];
-    std::string filename = (const char*)(spiffsFile->name);
+bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath) {
+    uint8_t buffer[littlefsFile->size];
+    std::string filename = lfsDir + std::string("/") + littlefsFile->name;
 
-    // Open file from spiffs file system.
+    // Open file from littlefs file system.
     lfs_file_t src;
     int ret = lfs_file_open(&s_fs, &src, (char *)(filename.c_str()), LFS_O_RDONLY);
     if (ret < 0) {
@@ -368,13 +381,14 @@ bool unpackFile(lfs_info *spiffsFile, const char *destPath) {
     }
 
     // read content into buffer
-    lfs_file_read(&s_fs, &src, buffer, spiffsFile->size);
+    lfs_file_read(&s_fs, &src, buffer, littlefsFile->size);
 
-    // Close spiffs file.
+    // Close littlefs file.
     lfs_file_close(&s_fs, &src);
 
     // Open file.
     FILE* dst = fopen(destPath, "wb");
+    if (!dst) return false;
 
     // Write content into file.
     fwrite(buffer, sizeof(uint8_t), sizeof(buffer), dst);
@@ -382,6 +396,70 @@ bool unpackFile(lfs_info *spiffsFile, const char *destPath) {
     // Close file.
     fclose(dst);
 
+
+    return true;
+}
+
+bool unpackLFSDirFiles(std::string sDest, const char *lfsDir) {
+    lfs_dir_t dir;
+    lfs_info ent;
+
+    // Check if directory exists. If it does not then try to create it with permissions 755.
+    if (! dirExists(sDest.c_str())) {
+        std::cout << "Directory " << sDest << " does not exists. Try to create it." << std::endl;
+
+        // Try to create directory.
+        if (! dirCreate(sDest.c_str())) {
+            return false;
+        }
+    }
+
+    // Open directory.
+    lfs_dir_open(&s_fs, &dir, lfsDir);
+
+    // Read content from directory.
+    while (lfs_dir_read(&s_fs, &dir, &ent)==1) {
+        // Ignore special dir entries
+        if ((strcmp(ent.name, ".") == 0) || (strcmp(ent.name, "..") == 0)) {
+            continue;
+        }
+
+        // Check if content is a file.
+        if ((int)(ent.type) == LFS_TYPE_REG) {
+            std::string name = (const char*)(ent.name);
+            std::string sDestFilePath = sDest + name;
+
+            // Unpack file to destination directory.
+            if (! unpackFile(lfsDir, &ent, sDestFilePath.c_str()) ) {
+                std::cout << "Can not unpack " << ent.name << "!" << std::endl;
+                return false;
+            }
+
+            // Output stuff.
+            std::cout
+                << lfsDir
+                << ent.name
+                << '\t'
+                << " > " << sDestFilePath
+                << '\t'
+                << "size: " << ent.size << " Bytes"
+                << std::endl;
+        } else if (ent.type == LFS_TYPE_DIR) {
+            char newPath[PATH_MAX];
+            if (lfsDir[0]) {
+                sprintf(newPath, "%s/%s/", lfsDir, ent.name);
+            } else {
+                sprintf(newPath, "%s/", ent.name);
+            }
+            std::string newDest = sDest + ent.name + "/";
+            dirCreate(newDest.c_str());
+            unpackLFSDirFiles(newDest, newPath);
+        }
+        // Get next file handle.
+    } // end while
+
+    // Close directory.
+    lfs_dir_close(&s_fs, &dir);
 
     return true;
 }
@@ -396,12 +474,12 @@ bool unpackFile(lfs_info *spiffsFile, const char *destPath) {
  * todo: Do unpack stuff for directories.
  */
 bool unpackFiles(std::string sDest) {
-    lfs_dir_t dir;
-    lfs_info ent;
-
     // Add "./" to path if is not given.
     if (sDest.find("./") == std::string::npos && sDest.find("/") == std::string::npos) {
         sDest = "./" + sDest;
+    }
+    if (sDest.back() != '/') {
+        sDest += "/";
     }
 
     // Check if directory exists. If it does not then try to create it with permissions 755.
@@ -414,61 +492,7 @@ bool unpackFiles(std::string sDest) {
         }
     }
 
-    // Open directory.
-    lfs_dir_open(&s_fs, &dir, "");
-
-    // Read content from directory.
-    while (lfs_dir_read(&s_fs, &dir, &ent)==1) {
-        // Ignore special dir entries
-        if ((strcmp(ent.name, ".") == 0) || (strcmp(ent.name, "..") == 0)) {
-            continue;
-        }
-
-        // Check if content is a file.
-        if ((int)(ent.type) == LFS_TYPE_REG) {
-            std::string name = (const char*)(ent.name);
-            std::string sDestFilePath = sDest + name;
-            size_t pos = name.find_first_of("/", 1);
-
-            // If file is in sub directories?
-            while (pos != std::string::npos) {
-                // Subdir path.
-                std::string path = sDest;
-                path += name.substr(0, pos);
-
-                // Create subddir if subdir not exists.
-                if (!dirExists(path.c_str())) {
-                    if (!dirCreate(path.c_str())) {
-                        return false;
-                    }
-                }
-
-                pos = name.find_first_of("/", pos + 1);
-            }
-
-            // Unpack file to destination directory.
-            if (! unpackFile(&ent, sDestFilePath.c_str()) ) {
-                std::cout << "Can not unpack " << ent.name << "!" << std::endl;
-                return false;
-            }
-
-            // Output stuff.
-            std::cout
-                << ent.name
-                << '\t'
-                << " > " << sDestFilePath
-                << '\t'
-                << "size: " << ent.size << " Bytes"
-                << std::endl;
-        }
-
-        // Get next file handle.
-    } // end while
-
-    // Close directory.
-    lfs_dir_close(&s_fs, &dir);
-
-    return true;
+    return unpackLFSDirFiles(sDest, "");
 }
 
 // Actions
@@ -482,9 +506,9 @@ int actionPack() {
         return 1;
     }
 
-    spiffsFormat();
+    littlefsFormat();
     int result = addFiles(s_dirName.c_str(), "/");
-    spiffsUnmount();
+    littlefsUnmount();
 
     fwrite(&s_flashmem[0], 4, s_flashmem.size()/4, fdres);
     fclose(fdres);
@@ -502,7 +526,7 @@ int actionUnpack(void) {
     int ret = 0;
     s_flashmem.resize(s_imageSize, 0xff);
 
-    // open spiffs image
+    // open littlefs image
     FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
     if (!fdsrc) {
         std::cerr << "error: failed to open image file" << std::endl;
@@ -519,7 +543,7 @@ int actionUnpack(void) {
     fclose(fdsrc);
 
     // mount file system
-    spiffsMount();
+    littlefsMount();
 
     // unpack files
     if (! unpackFiles(s_dirName)) {
@@ -527,7 +551,7 @@ int actionUnpack(void) {
     }
 
     // unmount file system
-    spiffsUnmount();
+    littlefsUnmount();
 
     return ret;
 }
@@ -546,18 +570,18 @@ int actionList() {
         return 1;
     }
     fclose(fdsrc);
-    spiffsMount();
-    listFiles();
-    spiffsUnmount();
+    littlefsMount();
+    listFiles("");
+    littlefsUnmount();
     return 0;
 }
 
 void processArgs(int argc, const char** argv) {
     TCLAP::CmdLine cmd("", ' ', VERSION);
-    TCLAP::ValueArg<std::string> packArg( "c", "create", "create spiffs image from a directory", true, "", "pack_dir");
-    TCLAP::ValueArg<std::string> unpackArg( "u", "unpack", "unpack spiffs image to a directory", true, "", "dest_dir");
-    TCLAP::SwitchArg listArg( "l", "list", "list files in spiffs image", false);
-    TCLAP::UnlabeledValueArg<std::string> outNameArg( "image_file", "spiffs image file", true, "", "image_file"  );
+    TCLAP::ValueArg<std::string> packArg( "c", "create", "create littlefs image from a directory", true, "", "pack_dir");
+    TCLAP::ValueArg<std::string> unpackArg( "u", "unpack", "unpack littlefs image to a directory", true, "", "dest_dir");
+    TCLAP::SwitchArg listArg( "l", "list", "list files in littlefs image", false);
+    TCLAP::UnlabeledValueArg<std::string> outNameArg( "image_file", "littlefs image file", true, "", "image_file"  );
     TCLAP::ValueArg<int> imageSizeArg( "s", "size", "fs image size, in bytes", false, 0x10000, "number" );
     TCLAP::ValueArg<int> pageSizeArg( "p", "page", "fs page size, in bytes", false, 256, "number" );
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
