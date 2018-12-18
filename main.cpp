@@ -27,6 +27,9 @@ extern "C" {
 #include "littlefs/lfs.h"
 }
 
+#ifndef PATH_MAX
+#define PATH_MAX 512
+#endif
 
 static std::vector<uint8_t> s_flashmem;
 
@@ -306,7 +309,7 @@ void listFiles(const char *path) {
         }
 
         if (it.type == LFS_TYPE_DIR) {
-            char newpath[LFS_NAME_MAX+1];
+            char newpath[PATH_MAX];
             sprintf(newpath, "%s/%s", path, it.name);
             listFiles(newpath);
         } else {

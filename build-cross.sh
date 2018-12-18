@@ -3,6 +3,8 @@ name=mklittlefs-$(git rev-parse --short HEAD)
 rel=${rel:=-2.5.0}
 subrel=${subrel:-2}
 
+rf *.json *.gz *.zip
+
 build ()
 {(
     TARGET_OS=${tgt} CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mklittlefs${exe} BUILD_CONFIG_NAME="-arduino-esp8266" CPPFLAGS="-DSPIFFS_USE_MAGIC_LENGTH=0 -DSPIFFS_ALIGNED_OBJECT_INDEX_TABLES=1"
