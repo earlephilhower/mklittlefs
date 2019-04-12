@@ -3,7 +3,7 @@ name=mklittlefs-$(git rev-parse --short HEAD)
 rel=${rel:=-2.5.0}
 subrel=${subrel:-2}
 
-rf *.json *.gz *.zip
+rm -f *.json *.gz *.zip
 
 build ()
 {(
