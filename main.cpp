@@ -96,7 +96,8 @@ void setLfsConfig()
   s_cfg.prog_size = s_blockSize;
   s_cfg.block_size = s_blockSize;
   s_cfg.block_count = s_flashmem.size() / s_blockSize;
-  s_cfg.lookahead = 128;
+  s_cfg.cache_size = s_blockSize;
+  s_cfg.lookahead_size = 128;
 }
 
 int littlefsTryMount() {
