@@ -86,6 +86,13 @@ $ mklittlefs --version
 ./mklittlefs  version: 0.2.3-6-g9a0e072
 ```
 
+## Cross-compiling
+
+To build for all cross compiled targets, run
+```
+docker run --user $(id -u):$(id -g) --rm -v $(pwd):/workdir earlephilhower/gcc-cross bash -c "cd /workdir; bash build-cross.sh"
+```
+
 
 ## License
 

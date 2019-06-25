@@ -92,12 +92,19 @@ void setLfsConfig()
   s_cfg.erase = lfs_flash_erase;
   s_cfg.sync  = lfs_flash_sync;
 
-  s_cfg.read_size = s_blockSize;
-  s_cfg.prog_size = s_blockSize;
-  s_cfg.block_size = s_blockSize;
+  s_cfg.read_size = 64;
+  s_cfg.prog_size = 64;
+  s_cfg.block_size =  s_blockSize;
   s_cfg.block_count = s_flashmem.size() / s_blockSize;
-  s_cfg.cache_size = s_blockSize;
-  s_cfg.lookahead_size = 128;
+  s_cfg.block_cycles = 16; // TODO - need better explanation
+  s_cfg.cache_size = 64;
+  s_cfg.lookahead_size = 64;
+  s_cfg.read_buffer = nullptr;
+  s_cfg.prog_buffer = nullptr;
+  s_cfg.lookahead_buffer = nullptr;
+  s_cfg.name_max = 0;
+  s_cfg.file_max = 0;
+  s_cfg.attr_max = 0;
 }
 
 int littlefsTryMount() {
