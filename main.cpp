@@ -329,9 +329,9 @@ void listFiles(const char *path) {
             listFiles(newpath);
         } else {
             uint32_t ftime;
-	    time_t t;
-	    char buff[PATH_MAX];
-	    snprintf(buff, sizeof(buff), "%s/%s",  path, it.name);
+            time_t t;
+            char buff[PATH_MAX];
+            snprintf(buff, sizeof(buff), "%s/%s",  path, it.name);
             if (lfs_getattr(&s_fs, buff, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) {
                 t = (time_t)ftime;
                 std::cout << it.size << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&t));
