@@ -209,6 +209,12 @@ int addFile(char* name, const char* path) {
     lfs_file_close(&s_fs, &dst);
     fclose(src);
 
+    // Add time metadata 't'
+    struct stat sbuf;
+    if (!stat(path, &sbuf)) {
+        uint32_t ftime = sbuf.st_mtime;
+        lfs_setattr(&s_fs, name, 't', (const void *)&ftime, sizeof(ftime));
+    }
     return 0;
 }
 
