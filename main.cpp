@@ -14,6 +14,7 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <utime.h>
 #include <unistd.h>
 #include <cstring>
 #include <string>
@@ -327,7 +328,16 @@ void listFiles(const char *path) {
             sprintf(newpath, "%s/%s", path, it.name);
             listFiles(newpath);
         } else {
-            std::cout << it.size << '\t' << path << "/" << it.name << std::endl;
+            uint32_t ftime;
+	    time_t t;
+	    char buff[PATH_MAX];
+	    snprintf(buff, sizeof(buff), "%s/%s",  path, it.name);
+            if (lfs_getattr(&s_fs, buff, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) {
+                t = (time_t)ftime;
+                std::cout << it.size << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&t));
+            } else {
+                std::cout << it.size << '\t' << path << "/" << it.name << std::endl;
+            }
         }
     }
     lfs_dir_close(&s_fs, &dir);
@@ -413,6 +423,14 @@ bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath
     // Close file.
     fclose(dst);
 
+    // Adjust time, if present
+    uint32_t ftime;
+    if (lfs_getattr(&s_fs, (char *)(filename.c_str()), 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) {
+        struct utimbuf ut;
+        ut.actime = ftime;
+        ut.modtime = ftime;
+        utime(destPath, &ut);
+    }
 
     return true;
 }
