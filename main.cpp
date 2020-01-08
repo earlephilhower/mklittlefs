@@ -215,6 +215,8 @@ int addFile(char* name, const char* path) {
     if (!stat(path, &sbuf)) {
         uint32_t ftime = sbuf.st_mtime;
         lfs_setattr(&s_fs, name, 't', (const void *)&ftime, sizeof(ftime));
+        ftime = sbuf.st_ctime;
+        lfs_setattr(&s_fs, name, 'c', (const void *)&ftime, sizeof(ftime));
     }
     return 0;
 }
