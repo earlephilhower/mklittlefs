@@ -49,14 +49,15 @@ endif
 STRIP ?= strip
 
 VERSION ?= $(shell git describe --always)
+LITTLEFS_PATH ?= littlefs
 LITTLEFS_VERSION := $(shell git -C littlefs describe --tags || echo "unknown")
 BUILD_CONFIG_NAME ?= -generic
 
 OBJ		:= main.o \
-		   littlefs/lfs.o \
-		   littlefs/lfs_util.o
+		   $(LITTLEFS_PATH)/lfs.o \
+		   $(LITTLEFS_PATH)/lfs_util.o
 
-INCLUDES := -Itclap -Iinclude -Ilittlefs -I.
+INCLUDES := -Itclap -Iinclude -I$(LITTLEFS_PATH) -I.
 
 FILES_TO_FORMAT := $(shell find . -not -path './littlefs/*' \( -name '*.c' -o -name '*.cpp' \))
 
