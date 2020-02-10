@@ -25,7 +25,12 @@
 
 extern "C" {
 #define LFS_NAME_MAX 32
-#include "littlefs/lfs.h"
+#include "lfs.h"
+
+#if LFS_VERSION_MAJOR < 2
+#define lfs_config lfs_config_s
+#define lfs_info lfs_info_s
+#endif
 }
 
 #ifndef PATH_MAX
@@ -97,15 +102,20 @@ void setLfsConfig()
   s_cfg.prog_size = 64;
   s_cfg.block_size =  s_blockSize;
   s_cfg.block_count = s_flashmem.size() / s_blockSize;
-  s_cfg.block_cycles = 16; // TODO - need better explanation
-  s_cfg.cache_size = 64;
-  s_cfg.lookahead_size = 64;
   s_cfg.read_buffer = nullptr;
   s_cfg.prog_buffer = nullptr;
   s_cfg.lookahead_buffer = nullptr;
+
+#if LFS_VERSION_MAJOR > 1
+  s_cfg.block_cycles = 16; // TODO - need better explanation
+  s_cfg.cache_size = 64;
+  s_cfg.lookahead_size = 64;
   s_cfg.name_max = 0;
   s_cfg.file_max = 0;
   s_cfg.attr_max = 0;
+#else
+  s_cfg.lookahead = 64;
+#endif
 }
 
 int littlefsTryMount() {
@@ -210,6 +220,8 @@ int addFile(char* name, const char* path) {
     lfs_file_close(&s_fs, &dst);
     fclose(src);
 
+
+#if LFS_VERSION_MAJOR > 1
     // Add time metadata 't'
     struct stat sbuf;
     if (!stat(path, &sbuf)) {
@@ -218,6 +230,7 @@ int addFile(char* name, const char* path) {
         // There is no portable way to get creation time via stat, so simply call it identical to the last write in this case
         lfs_setattr(&s_fs, name, 'c', (const void *)&ftime, sizeof(ftime));
     }
+#endif
     return 0;
 }
 
@@ -330,14 +343,18 @@ void listFiles(const char *path) {
             sprintf(newpath, "%s/%s", path, it.name);
             listFiles(newpath);
         } else {
-            uint32_t ftime;
-            time_t t;
             char buff[PATH_MAX];
             snprintf(buff, sizeof(buff), "%s/%s",  path, it.name);
+#if LFS_VERSION_MAJOR > 1
+            uint32_t ftime;
+            time_t t;
             if (lfs_getattr(&s_fs, buff, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) {
                 t = (time_t)ftime;
                 std::cout << it.size << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&t));
-            } else {
+            } else
+#endif
+            {
+
                 std::cout << it.size << '\t' << path << "/" << it.name << std::endl;
             }
         }
@@ -425,6 +442,7 @@ bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath
     // Close file.
     fclose(dst);
 
+#if LFS_VERSION_MAJOR > 1
     // Adjust time, if present
     uint32_t ftime;
     if (lfs_getattr(&s_fs, (char *)(filename.c_str()), 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) {
@@ -433,6 +451,7 @@ bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath
         ut.modtime = ftime;
         utime(destPath, &ut);
     }
+#endif
 
     return true;
 }
