@@ -149,6 +149,8 @@ int addFile(char* name, const char* path) {
         return 1;
     }
 
+    struct stat sbuf;
+
     // Make any subdirs required to place this file
     char pathStr[LFS_NAME_MAX+1];
     strcpy(pathStr, name); // Already know path length < LFS_NAME_MAX
@@ -157,6 +159,13 @@ int addFile(char* name, const char* path) {
     while (ptr) {
        *ptr = 0;
        lfs_mkdir(&s_fs, pathStr); // Ignore error, we'll catch later if it's fatal
+       // Add time metadata 't'
+       if (!stat(path, &sbuf)) {
+            uint32_t ftime = sbuf.st_mtime;
+            lfs_setattr(&s_fs, pathStr, 't', (const void *)&ftime, sizeof(ftime));
+            // There is no portable way to get creation time via stat, so simply call it identical to the last write in this case
+            lfs_setattr(&s_fs, pathStr, 'c', (const void *)&ftime, sizeof(ftime));
+       }
        *ptr = '/';
        ptr = strchr(ptr+1, '/');
     }
@@ -211,7 +220,6 @@ int addFile(char* name, const char* path) {
     fclose(src);
 
     // Add time metadata 't'
-    struct stat sbuf;
     if (!stat(path, &sbuf)) {
         uint32_t ftime = sbuf.st_mtime;
         lfs_setattr(&s_fs, name, 't', (const void *)&ftime, sizeof(ftime));
@@ -325,16 +333,22 @@ void listFiles(const char *path) {
             continue;
         }
 
+        uint32_t ftime;
+        time_t t;
         if (it.type == LFS_TYPE_DIR) {
             char newpath[PATH_MAX];
             sprintf(newpath, "%s/%s", path, it.name);
+            if (lfs_getattr(&s_fs, newpath, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) { // and/or check 'c' as well?
+                t = (time_t)ftime;
+                std::cout << "<dir>" << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&t)); 
+            } else {
+                std::cout << "<dir>" << '\t' << path << "/" << it.name << std::endl;
+            }
             listFiles(newpath);
         } else {
-            uint32_t ftime;
-            time_t t;
             char buff[PATH_MAX];
             snprintf(buff, sizeof(buff), "%s/%s",  path, it.name);
-            if (lfs_getattr(&s_fs, buff, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) {
+            if (lfs_getattr(&s_fs, buff, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) { // and/or check 'c' as well?
                 t = (time_t)ftime;
                 std::cout << it.size << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&t));
             } else {
