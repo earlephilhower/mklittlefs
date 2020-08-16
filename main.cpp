@@ -152,7 +152,7 @@ int addFile(char* name, const char* path) {
     struct stat sbuf;
 
     // Make any subdirs required to place this file
-    char pathStr[LFS_NAME_MAX+1];
+    char pathStr[PATH_MAX+1];
     strcpy(pathStr, name); // Already know path length < LFS_NAME_MAX
     // Make dirs up to the final fnamepart
     char *ptr = strchr(pathStr, '/');
