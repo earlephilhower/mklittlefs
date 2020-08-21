@@ -26,7 +26,7 @@ endif
 endif # TARGET_OS
 
 # OS-specific settings and build flags
-ifeq ($(TARGET_OS),windows)
+ifeq ($(TARGET_OS),win32)
 	ARCHIVE ?= zip
 	TARGET := mklittlefs.exe
 	TARGET_CFLAGS = -mno-ms-bitfields
@@ -46,6 +46,7 @@ ifeq ($(ARCHIVE), tar)
 	ARCHIVE_EXTENSION := tar.gz
 endif
 
+CC ?= gcc
 STRIP ?= strip
 
 VERSION ?= $(shell git describe --always)

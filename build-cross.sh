@@ -33,8 +33,8 @@ build ()
 )}
 
 tgt=osx pfx=x86_64-apple-darwin14 exe="" AHOST="x86_64-apple-darwin" build
-tgt=windows pfx=x86_64-w64-mingw32 exe=".exe" AHOST="x86_64-mingw32" build
-tgt=windows pfx=i686-w64-mingw32 exe=".exe" AHOST="i686-mingw32" build
+tgt=win32 pfx=x86_64-w64-mingw32 exe=".exe" AHOST="x86_64-mingw32" build
+tgt=win32 pfx=i686-w64-mingw32 exe=".exe" AHOST="i686-mingw32" build
 tgt=linux pfx=arm-linux-gnueabihf exe="" AHOST="arm-linux-gnueabihf" build
 tgt=linux pfx=aarch64-linux-gnu exe="" AHOST="aarch64-linux-gnu" build
 tgt=linux pfx=x86_64-linux-gnu exe="" AHOST="x86_64-pc-linux-gnu" build
