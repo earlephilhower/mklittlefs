@@ -1,7 +1,7 @@
 # OS detection. Not used in CI builds
 ifndef TARGET_OS
 ifeq ($(OS),Windows_NT)
-	TARGET_OS := win32
+	TARGET_OS := windows
 else
 	UNAME_S := $(shell uname -s)
 	ifeq ($(UNAME_S),Linux)
@@ -26,7 +26,7 @@ endif
 endif # TARGET_OS
 
 # OS-specific settings and build flags
-ifeq ($(TARGET_OS),win32)
+ifeq ($(TARGET_OS),windows)
 	ARCHIVE ?= zip
 	TARGET := mklittlefs.exe
 	TARGET_CFLAGS = -mno-ms-bitfields
