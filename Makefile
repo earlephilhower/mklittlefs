@@ -87,10 +87,6 @@ all: $(TARGET)
 
 dist: $(DIST_ARCHIVE)
 
-ifndef SKIP_TESTS
-dist: test
-endif
-
 $(DIST_ARCHIVE): $(TARGET) $(DIST_DIR)
 	cp $(TARGET) $(DIST_DIR)/
 	$(ARCHIVE_CMD) $(DIST_ARCHIVE) $(DIST_DIR)
