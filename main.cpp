@@ -559,6 +559,12 @@ int actionPack() {
 
     littlefsFormat();
     int result = addFiles(s_dirName.c_str(), "/");
+
+    // Set creation/modification time of volume on root
+    time_t ct = time(NULL);
+    lfs_setattr(&s_fs, "/", 't', &ct, sizeof(ct));
+    lfs_setattr(&s_fs, "/", 'c', &ct, sizeof(ct));
+
     littlefsUnmount();
 
     fwrite(&s_flashmem[0], 4, s_flashmem.size()/4, fdres);
@@ -623,6 +629,12 @@ int actionList() {
     fclose(fdsrc);
     littlefsMount();
     listFiles("");
+
+    time_t ct;
+    if (lfs_getattr(&s_fs, "/", 't', &ct, sizeof(ct)) >= 0) { // and/or check 'c' as well?
+        std::cout << "Creation time:" << '\t' << asctime(gmtime(&ct));
+    }
+
     littlefsUnmount();
     return 0;
 }
