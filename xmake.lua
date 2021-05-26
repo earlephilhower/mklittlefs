@@ -1,0 +1,23 @@
+target("mklittlefs")
+    set_kind("binary")
+    add_files("main.cpp")
+    add_files("littlefs/*.c")
+    add_includedirs(".")
+    add_includedirs("include")
+    add_includedirs("littlefs")
+    add_defines("LFS_NAME_MAX=128")
+    before_build(function(target)
+        outdata = os.iorun("git describe --always")
+        outdata = string.gsub(outdata, "\r", "")
+        outdata = string.gsub(outdata, "\n", "")
+        outdata = "VERSION=\""..outdata.."\""
+        print(outdata)
+        target:add("defines", outdata)
+
+        outdata = os.iorun("git -C littlefs describe --tags")
+        outdata = string.gsub(outdata, "\r", "")
+        outdata = string.gsub(outdata, "\n", "")
+        outdata = "LITTLEFS_VERSION=\""..outdata.."\""
+        print(outdata)
+        target:add("defines", outdata)
+    end)
