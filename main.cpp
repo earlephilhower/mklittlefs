@@ -24,7 +24,9 @@
 #include "tclap/UnlabeledValueArg.h"
 
 extern "C" {
+#ifndef LFS_NAME_MAX
 #define LFS_NAME_MAX 32
+#endif
 #include "littlefs/lfs.h"
 }
 
