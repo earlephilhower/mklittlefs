@@ -1,3 +1,0 @@
-[submodule "littlefs"]
-	path = littlefs
-	url = https://github.com/ARMmbed/littlefs
