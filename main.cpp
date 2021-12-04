@@ -247,8 +247,10 @@ int addFiles(const char* dirname, const char* subPath) {
                 continue;
             }
             {
+                std::string fullpath = dirPath;
+                fullpath += ent->d_name;
                 struct stat path_stat;
-                std::string name = ent->d_name;
+                std::string name = fullpath;
                 int loopcount = 10;
                 char buf[PATH_MAX];
                 bool skipentry = false;
@@ -256,7 +258,7 @@ int addFiles(const char* dirname, const char* subPath) {
                 lstat(name.c_str(), &path_stat);
                 while (S_ISLNK(path_stat.st_mode) && loopcount > 0) {
                     size_t size = readlink(name.c_str(), buf, sizeof buf);
-                    std::string target = std::string(buf, size);
+                    std::string target = dirPath + std::string(buf, size);
                     lstat(target.c_str(), &path_stat);
                     // if it points to a directory, skip that entry
                     if (S_ISDIR(path_stat.st_mode)) {
