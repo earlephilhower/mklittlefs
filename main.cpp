@@ -247,36 +247,56 @@ int addFiles(const char* dirname, const char* subPath) {
                 continue;
             }
             {
-                std::string fullpath = dirPath;
-                fullpath += ent->d_name;
                 struct stat path_stat;
-                std::string name = fullpath;
-                int loopcount = 10;
-                char buf[PATH_MAX];
+                std::string name = dirPath + ent->d_name;
+                int loopcount = 10; // where is SYMLOOP_MAX?
                 bool skipentry = false;
+                std::string target = name;
+
                 // follow a chain of softlinks
                 lstat(name.c_str(), &path_stat);
                 while (S_ISLNK(path_stat.st_mode) && loopcount > 0) {
-                    size_t size = readlink(name.c_str(), buf, sizeof buf);
-                    std::string target = dirPath + std::string(buf, size);
+                    char buf[PATH_MAX];
+                    ssize_t size = readlink(target.c_str(), buf, sizeof buf);
+
+                    if (size < 0) {
+                        perror(("readlink " + target).c_str());
+                        skipentry = true;
+                        break;
+                    }
+                    if (buf[0] == '/') {
+                        target = std::string(buf, size);
+                    } else {
+                        target = dirPath + std::string(buf, size);
+                    }
+                    char rpath[PATH_MAX];
+                    const char *ptr = realpath(target.c_str(), rpath);
+                    if (ptr == NULL) {
+                        perror(("realpath " + target).c_str());
+                        skipentry = true;
+                        continue;
+                    }
+                    target = rpath;
                     lstat(target.c_str(), &path_stat);
                     // if it points to a directory, skip that entry
                     if (S_ISDIR(path_stat.st_mode)) {
                         std::cerr << "symlink " << name << " points to directory " << target << " - skipping" << std::endl;
-                    skipentry = true;
+                        skipentry = true;
+                    }
                 }
                 // also skip links pointing to themselves
-                if (name.compare(target) == 0) {
-                    std::cerr << "symlink " << name << " loops back to itself - skipping" << std::endl;
-                    skipentry = true;
-                    break;
-                }
-                name = target;
-                loopcount--;
+                if (S_ISLNK(path_stat.st_mode) && name.compare(target) == 0) {
+                std::cerr << "symlink " << name << " loops back to itself - skipping"
+                            << std::endl;
+                skipentry = true;
+                break;
             }
+            name = target;
+            loopcount--;
             if (loopcount == 0) {
-                std::cerr  << "symlink " << name << " - too many redirections, skipping" << std::endl;
-                 continue;
+                std::cerr << "symlink " << name
+                    << " - too many redirections, skipping" << std::endl;
+                continue;
             }
             if (skipentry)
                 continue;
