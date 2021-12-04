@@ -246,6 +246,39 @@ int addFiles(const char* dirname, const char* subPath) {
             if ((strcmp(ent->d_name, ".") == 0) || (strcmp(ent->d_name, "..") == 0)) {
                 continue;
             }
+            {
+                struct stat path_stat;
+                std::string name = ent->d_name;
+                int loopcount = 10;
+                char buf[PATH_MAX];
+                bool skipentry = false;
+                // follow a chain of softlinks
+                lstat(name.c_str(), &path_stat);
+                while (S_ISLNK(path_stat.st_mode) && loopcount > 0) {
+                    size_t size = readlink(name.c_str(), buf, sizeof buf);
+                    std::string target = std::string(buf, size);
+                    lstat(target.c_str(), &path_stat);
+                    // if it points to a directory, skip that entry
+                    if (S_ISDIR(path_stat.st_mode)) {
+                        std::cerr << "symlink " << name << " points to directory " << target << " - skipping" << std::endl;
+                    skipentry = true;
+                }
+                // also skip links pointing to themselves
+                if (name.compare(target) == 0) {
+                    std::cerr << "symlink " << name << " loops back to itself - skipping" << std::endl;
+                    skipentry = true;
+                    break;
+                }
+                name = target;
+                loopcount--;
+            }
+            if (loopcount == 0) {
+                std::cerr  << "symlink " << name << " - too many redirections, skipping" << std::endl;
+                 continue;
+            }
+            if (skipentry)
+                continue;
+            }
 
             if (!s_addAllFiles) {
                 bool skip = false;
