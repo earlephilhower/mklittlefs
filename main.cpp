@@ -246,9 +246,8 @@ int addFiles(const char* dirname, const char* subPath) {
             if ((strcmp(ent->d_name, ".") == 0) || (strcmp(ent->d_name, "..") == 0)) {
                 continue;
             }
-		
 #if !defined(_WIN32)
-	    {
+            {
                 struct stat path_stat;
                 std::string name = dirPath + ent->d_name;
                 int loopcount = 10; // where is SYMLOOP_MAX?
@@ -288,24 +287,22 @@ int addFiles(const char* dirname, const char* subPath) {
                 }
                 // also skip links pointing to themselves
                 if (S_ISLNK(path_stat.st_mode) && name.compare(target) == 0) {
-                    std::cerr << "symlink " << name << " loops back to itself - skipping"
-                                << std::endl;
-                    skipentry = true;
-                    break;
-                }
-                name = target;
-                loopcount--;
-                if (loopcount == 0) {
-                    std::cerr << "symlink " << name
-                        << " - too many redirections, skipping" << std::endl;
-                    continue;
-                }
-                if (skipentry)
-                    continue;
-                }
-	    }
-#endif // !defined(_WIN32)
-	    
+                std::cerr << "symlink " << name << " loops back to itself - skipping"
+                            << std::endl;
+                skipentry = true;
+                break;
+            }
+            name = target;
+            loopcount--;
+            if (loopcount == 0) {
+                std::cerr << "symlink " << name
+                    << " - too many redirections, skipping" << std::endl;
+                continue;
+            }
+            if (skipentry)
+                continue;
+            }
+#endif
             if (!s_addAllFiles) {
                 bool skip = false;
                 size_t ignored_file_names_count = sizeof(ignored_file_names) / sizeof(ignored_file_names[0]);
@@ -336,7 +333,7 @@ int addFiles(const char* dirname, const char* subPath) {
 
                     if (addFiles(dirname, newSubPath.c_str()) != 0)
                     {
-                        std::cerr << "Error adding content from " << ent->d_name << "!" << std::endl;
+                        std::cerr << "Error for adding content from " << ent->d_name << "!" << std::endl;
                     }
 
                     continue;
