@@ -70,7 +70,7 @@ int lfs_flash_prog(const struct lfs_config *c, lfs_block_t block, lfs_off_t off,
 
 int lfs_flash_erase(const struct lfs_config *c, lfs_block_t block)
 {
-  memset(&s_flashmem[0] + block * c->block_size, 0, c->block_size);
+  memset(&s_flashmem[0] + block * c->block_size, 0xFF, c->block_size);
   return 0;
 }
 
