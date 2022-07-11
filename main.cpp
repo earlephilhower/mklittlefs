@@ -20,8 +20,11 @@
 #include <string>
 #include <memory>
 #include <cstdlib>
+#include "glob.hpp"
 #include "tclap/CmdLine.h"
 #include "tclap/UnlabeledValueArg.h"
+
+namespace fs = ghc::filesystem;
 
 extern "C" {
 #ifndef LFS_NAME_MAX
@@ -47,6 +50,7 @@ static Action s_action = ACTION_NONE;
 
 static int s_debugLevel = 0;
 static bool s_addAllFiles;
+static std::vector<std::string> s_ignorePats;
 
 // Unless -a flag is given, these files/directories will not be included into the image
 static const char* ignored_file_names[] = {
@@ -318,6 +322,21 @@ int addFiles(const char* dirname, const char* subPath) {
                 if (skip) {
                     continue;
                 }
+            }
+
+            bool ignorePatSkip = false;
+            fs::path path(ent->d_name);
+            for (auto& p : s_ignorePats)
+            {
+                if (glob::fnmatch(path, p))
+                {
+                    ignorePatSkip = true;
+                    break;
+                }
+            }
+            if (ignorePatSkip)
+            {
+                continue;
             }
 
             std::string fullpath = dirPath;
@@ -707,12 +726,14 @@ void processArgs(int argc, const char** argv) {
     TCLAP::ValueArg<int> pageSizeArg( "p", "page", "fs page size, in bytes", false, 256, "number" );
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
     TCLAP::SwitchArg addAllFilesArg( "a", "all-files", "when creating an image, include files which are normally ignored; currently only applies to '.DS_Store' files and '.git' directories", false);
+    TCLAP::MultiArg<std::string> ignoreFilesArg( "i", "ignore", "when creating an image, ignore files matching the given glob partern", false, "ignore_pat");
     TCLAP::ValueArg<int> debugArg( "d", "debug", "Debug level. 0 means no debug output.", false, 0, "0-5" );
 
     cmd.add( imageSizeArg );
     cmd.add( pageSizeArg );
     cmd.add( blockSizeArg );
     cmd.add( addAllFilesArg );
+    cmd.add( ignoreFilesArg );
     cmd.add( debugArg );
     std::vector<TCLAP::Arg*> args = {&packArg, &unpackArg, &listArg};
     cmd.xorAdd( args );
@@ -739,6 +760,7 @@ void processArgs(int argc, const char** argv) {
     s_pageSize  = pageSizeArg.getValue();
     s_blockSize = blockSizeArg.getValue();
     s_addAllFiles = addAllFilesArg.isSet();
+    s_ignorePats = ignoreFilesArg.getValue();
 }
 
 int main(int argc, const char * argv[]) {
