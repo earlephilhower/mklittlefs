@@ -47,6 +47,7 @@ static Action s_action = ACTION_NONE;
 
 static int s_debugLevel = 0;
 static bool s_addAllFiles;
+static bool s_addTimestamp;
 
 // Unless -a flag is given, these files/directories will not be included into the image
 static const char* ignored_file_names[] = {
@@ -145,43 +146,26 @@ bool littlefsFormat(){
 }
 
 int addFile(char* name, const char* path) {
+    struct stat sbuf;
     FILE* src = fopen(path, "rb");
     if (!src) {
         std::cerr << "error: failed to open " << path << " for reading" << std::endl;
         return 1;
     }
 
-    struct stat sbuf;
-
-    // Make any subdirs required to place this file
-    char pathStr[PATH_MAX+1];
-    strcpy(pathStr, name); // Already know path length < LFS_NAME_MAX
-    // Make dirs up to the final fnamepart
-    char *ptr = strchr(pathStr, '/');
-    while (ptr) {
-       *ptr = 0;
-       lfs_mkdir(&s_fs, pathStr); // Ignore error, we'll catch later if it's fatal
-       // Add time metadata 't'
-       if (!stat(path, &sbuf)) {
-            uint32_t ftime = sbuf.st_mtime;
-            lfs_setattr(&s_fs, pathStr, 't', (const void *)&ftime, sizeof(ftime));
-            // There is no portable way to get creation time via stat, so simply call it identical to the last write in this case
-            lfs_setattr(&s_fs, pathStr, 'c', (const void *)&ftime, sizeof(ftime));
-       }
-       *ptr = '/';
-       ptr = strchr(ptr+1, '/');
-    }
     lfs_file_t dst;
     int ret = lfs_file_open(&s_fs, &dst, name, LFS_O_CREAT | LFS_O_TRUNC | LFS_O_WRONLY);
     if (ret < 0) {
         std::cerr << "unable to open '" << name << "." << std::endl;
         return 1;
     }
+
     // read file size
     fseek(src, 0, SEEK_END);
     size_t size = ftell(src);
     fseek(src, 0, SEEK_SET);
 
+    std::cout << name << std::endl;
     if (s_debugLevel > 0) {
         std::cout << "file size: " << size << std::endl;
     }
@@ -221,8 +205,7 @@ int addFile(char* name, const char* path) {
     lfs_file_close(&s_fs, &dst);
     fclose(src);
 
-    // Add time metadata 't'
-    if (!stat(path, &sbuf)) {
+    if(s_addTimestamp && !stat(path, &sbuf)) {
         uint32_t ftime = sbuf.st_mtime;
         lfs_setattr(&s_fs, name, 't', (const void *)&ftime, sizeof(ftime));
         // There is no portable way to get creation time via stat, so simply call it identical to the last write in this case
@@ -231,26 +214,27 @@ int addFile(char* name, const char* path) {
     return 0;
 }
 
-int addFiles(const char* dirname, const char* subPath) {
+int addFiles(const char* dirname) {
     DIR *dir;
     struct dirent *ent;
-    bool error = false;
-    std::string dirPath = dirname;
-    dirPath += subPath;
+    std::string dirRoot = dirname;
+    std::vector<std::string> dirs;
+    std::vector<std::string> files;
+    size_t i = 0;
+    dirs.emplace_back("");
+    struct stat path_stat;
 
-    // Open directory
-    if ((dir = opendir (dirPath.c_str())) != NULL) {
+    while (i < dirs.size()) {
+        std::string dirPath = dirRoot + "/" + dirs[i];
+        if ((dir = opendir(dirPath.c_str())) != NULL) {
+            // Read files from directory.
+            while ((ent = readdir (dir)) != NULL) {
 
-        // Read files from directory.
-        while ((ent = readdir (dir)) != NULL) {
-
-            // Ignore dir itself.
-            if ((strcmp(ent->d_name, ".") == 0) || (strcmp(ent->d_name, "..") == 0)) {
-                continue;
-            }
+                // Ignore dir itself.
+                if ((strcmp(ent->d_name, ".") == 0) || (strcmp(ent->d_name, "..") == 0)) {
+                    continue;
+                }
 #if !defined(_WIN32)
-            {
-                struct stat path_stat;
                 std::string name = dirPath + ent->d_name;
                 int loopcount = 10; // where is SYMLOOP_MAX?
                 bool skipentry = false;
@@ -283,92 +267,108 @@ int addFiles(const char* dirname, const char* subPath) {
                     lstat(target.c_str(), &path_stat);
                     // if it points to a directory, skip that entry
                     if (S_ISDIR(path_stat.st_mode)) {
-                        std::cerr << "symlink " << name << " points to directory " << target << " - skipping" << std::endl;
+                        std::cerr << "symlink " << name << " points to directory " << target << " - skipping"
+                            << std::endl;
                         skipentry = true;
                     }
                 }
                 // also skip links pointing to themselves
                 if (S_ISLNK(path_stat.st_mode) && name.compare(target) == 0) {
-                std::cerr << "symlink " << name << " loops back to itself - skipping"
-                            << std::endl;
-                skipentry = true;
-                break;
-            }
-            name = target;
-            loopcount--;
-            if (loopcount == 0) {
-                std::cerr << "symlink " << name
-                    << " - too many redirections, skipping" << std::endl;
-                continue;
-            }
-            if (skipentry)
-                continue;
-            }
+                     std::cerr << "symlink " << name << " loops back to itself - skipping" << std::endl;
+                    skipentry = true;
+                    break;
+                }
+                name = target;
+                loopcount--;
+                if (loopcount == 0) {
+                    std::cerr << "symlink " << name << " - too many redirections, skipping" << std::endl;
+                    continue;
+                }
+                if (skipentry)
+                    continue;
 #endif
-            if (!s_addAllFiles) {
-                bool skip = false;
-                size_t ignored_file_names_count = sizeof(ignored_file_names) / sizeof(ignored_file_names[0]);
-                for (size_t i = 0; i < ignored_file_names_count; ++i) {
-                    if (strcmp(ent->d_name, ignored_file_names[i]) == 0) {
-                        std::cerr << "skipping " << ent->d_name << std::endl;
-                        skip = true;
-                        break;
+                if (!s_addAllFiles) {
+                    bool skip = false;
+                    size_t ignored_file_names_count = sizeof(ignored_file_names) / sizeof(ignored_file_names[0]);
+                    for (size_t i = 0; i < ignored_file_names_count; ++i) {
+                        if (strcmp(ent->d_name, ignored_file_names[i]) == 0) {
+                            std::cerr << "skipping " << ent->d_name << std::endl;
+                            skip = true;
+                            break;
+                        }
+                    }
+                    if (skip) {
+                        continue;
                     }
                 }
-                if (skip) {
-                    continue;
-                }
-            }
 
-            std::string fullpath = dirPath;
-            fullpath += ent->d_name;
-            struct stat path_stat;
-            stat (fullpath.c_str(), &path_stat);
+                std::string fullpath = dirPath + "/";
+                fullpath += ent->d_name;
+                stat (fullpath.c_str(), &path_stat);
 
-            if (!S_ISREG(path_stat.st_mode)) {
-                // Check if path is a directory.
-                if (S_ISDIR(path_stat.st_mode)) {
-                    // Prepare new sub path.
-                    std::string newSubPath = subPath;
-                    newSubPath += ent->d_name;
-                    newSubPath += "/";
+                if (!S_ISREG(path_stat.st_mode)) {
+                    // Check if path is a directory.
+                    if (S_ISDIR(path_stat.st_mode)) {
+                        // Prepare new sub path.
+                        std::string newSubPath = dirs[i];
+                        newSubPath += "/";
+                        newSubPath += ent->d_name;
+                        //newSubPath += "/";
 
-                    if (addFiles(dirname, newSubPath.c_str()) != 0)
+                        dirs.emplace_back(newSubPath);
+                        continue;
+                    }
+                    else
                     {
-                        std::cerr << "Error for adding content from " << ent->d_name << "!" << std::endl;
+                        std::cerr << "skipping " << ent->d_name << std::endl;
+                        continue;
                     }
-
-                    continue;
                 }
-                else
-                {
-                    std::cerr << "skipping " << ent->d_name << std::endl;
-                    continue;
-                }
-            }
 
-            // Filepath with dirname as root folder.
-            std::string filepath = subPath;
-            filepath += ent->d_name;
-            std::cout << filepath << std::endl;
+                // Filepath with dirname as root folder.
+                std::string filepath = dirs[i] + "/" + ent->d_name;
+                // Add File to vector.
+                files.emplace_back(filepath);
+            } // end while
+            closedir (dir);
+        } else {
+            std::cerr << "warning: can't read source directory " << dirPath << std::endl;
+            return -1;
+        }
+        ++i;
+    }
 
-            // Add File to image.
-            if (addFile((char*)filepath.c_str(), fullpath.c_str()) != 0) {
-                std::cerr << "error adding file!" << std::endl;
-                error = true;
+    /* Now we sort the path vector to guarantee the binary consistency */
+    sort(dirs.begin(), dirs.end());
+    sort(files.begin(), files.end());
+
+    /* Remove the first "" entry */
+    dirs.erase(dirs.begin());
+    /* Make directory and create files now */
+    for (auto &d : dirs) {
+        if (lfs_mkdir(&s_fs, d.c_str())) {
+            std::cerr << "fail to create directory " << d << std::endl;
+            return -1;
+        }
+        stat((dirRoot + "/" + d).c_str(), &path_stat);
+        uint32_t ftime = path_stat.st_mtime;
+        lfs_setattr(&s_fs, d.c_str(), 't', (const void *)&ftime, sizeof(ftime));
+        // There is no portable way to get creation time via stat, so simply call it identical to the last write in this case
+        lfs_setattr(&s_fs, d.c_str(), 'c', (const void *)&ftime, sizeof(ftime));
+    }
+
+    for (auto &f : files) {
+        std::string fullpath = dirRoot + "/" + f;
+        if (addFile((char *)f.c_str(), fullpath.c_str()) != 0) {
+                std::cerr << "error adding file " << f << "!" << std::endl;
                 if (s_debugLevel > 0) {
                     std::cout << std::endl;
                 }
-                break;
-            }
-        } // end while
-        closedir (dir);
-    } else {
-        std::cerr << "warning: can't read source directory" << std::endl;
-        return 1;
+                return -1;
+        }
     }
 
-    return (error) ? 1 : 0;
+    return 0;
 }
 
 void listFiles(const char *path) {
@@ -445,7 +445,7 @@ bool dirExists(const char* path) {
 bool dirCreate(const char* path) {
     // Check if directory also exists.
     if (dirExists(path)) {
-	    return false;
+        return false;
     }
 
     // platform stuff...
@@ -454,8 +454,8 @@ bool dirCreate(const char* path) {
 #else
     if (mkdir(path, S_IRWXU | S_IXGRP | S_IRGRP | S_IROTH | S_IXOTH) != 0) {
 #endif
-	    std::cerr << "Can not create directory!!!" << std::endl;
-		return false;
+        std::cerr << "Can not create directory!!!" << std::endl;
+        return false;
     }
 
     return true;
@@ -616,12 +616,14 @@ int actionPack() {
     }
 
     littlefsFormat();
-    int result = addFiles(s_dirName.c_str(), "/");
+    int result = addFiles(s_dirName.c_str());
 
-    // Set creation/modification time of volume on root
-    time_t ct = time(NULL);
-    lfs_setattr(&s_fs, "/", 't', &ct, sizeof(ct));
-    lfs_setattr(&s_fs, "/", 'c', &ct, sizeof(ct));
+    if (s_addTimestamp) {
+        // Set creation/modification time of volume on root
+        time_t ct = time(NULL);
+        lfs_setattr(&s_fs, "/", 't', &ct, sizeof(ct));
+        lfs_setattr(&s_fs, "/", 'c', &ct, sizeof(ct));
+    }
 
     littlefsUnmount();
 
@@ -639,6 +641,16 @@ int actionPack() {
  */
 int actionUnpack(void) {
     int ret = 0;
+    struct stat sbuf;
+
+    /* Make sure image size is right */
+    if (!stat(s_imageName.c_str(), &sbuf)) {
+        s_imageSize = sbuf.st_size;
+    } else {
+        std::cerr << "error: failed to check " << s_imageName << "'s size" << std::endl;
+        return -1;
+    }
+
     s_flashmem.resize(s_imageSize, 0xff);
 
     // open littlefs image
@@ -673,6 +685,16 @@ int actionUnpack(void) {
 
 
 int actionList() {
+    struct stat sbuf;
+
+    /* Make sure image size is right */
+    if (!stat(s_imageName.c_str(), &sbuf)) {
+        s_imageSize = sbuf.st_size;
+    } else {
+        std::cerr << "error: failed to check " << s_imageName << "'s size" << std::endl;
+        return -1;
+    }
+
     s_flashmem.resize(s_imageSize, 0xff);
 
     FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
@@ -708,12 +730,14 @@ void processArgs(int argc, const char** argv) {
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
     TCLAP::SwitchArg addAllFilesArg( "a", "all-files", "when creating an image, include files which are normally ignored; currently only applies to '.DS_Store' files and '.git' directories", false);
     TCLAP::ValueArg<int> debugArg( "d", "debug", "Debug level. 0 means no debug output.", false, 0, "0-5" );
+    TCLAP::SwitchArg addTimestampArg( "t", "timestamp", "add timestamp of entries and root.", false);
 
     cmd.add( imageSizeArg );
     cmd.add( pageSizeArg );
     cmd.add( blockSizeArg );
     cmd.add( addAllFilesArg );
     cmd.add( debugArg );
+    cmd.add( addTimestampArg );
     std::vector<TCLAP::Arg*> args = {&packArg, &unpackArg, &listArg};
     cmd.xorAdd( args );
     cmd.add( outNameArg );
@@ -739,6 +763,7 @@ void processArgs(int argc, const char** argv) {
     s_pageSize  = pageSizeArg.getValue();
     s_blockSize = blockSizeArg.getValue();
     s_addAllFiles = addAllFilesArg.isSet();
+    s_addTimestamp = addTimestampArg.isSet();
 }
 
 int main(int argc, const char * argv[]) {
@@ -755,7 +780,7 @@ int main(int argc, const char * argv[]) {
         return actionPack();
         break;
     case ACTION_UNPACK:
-    	return actionUnpack();
+        return actionUnpack();
         break;
     case ACTION_LIST:
         return actionList();

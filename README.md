@@ -6,7 +6,7 @@ Based off of [mkspiffs](https://github.com/igrr/mkspiffs) by Ivan Grokhotkov.
 
 ```
 
-   mklittlefs  {-c <pack_dir>|-u <dest_dir>|-l|-i} [-d <0-5>] [-b <number>]
+   mklittlefs  {-c <pack_dir>|-u <dest_dir>|-l} [-t] [-d <0-5>] [-b <number>]
                [-p <number>] [-s <number>] [--] [--version] [-h]
                <image_file>
 
@@ -23,6 +23,9 @@ Where:
      (OR required)  list files in littlefs image
          -- OR --
 
+
+   -t,  --timestamp
+     add timestamp of entries and root.
 
    -d <0-5>,  --debug <0-5>
      Debug level. 0 means no debug output.
