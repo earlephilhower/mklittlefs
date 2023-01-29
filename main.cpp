@@ -710,8 +710,37 @@ int actionList() {
     return 0;
 }
 
+#define PRINT_INT_MACRO(def_name) \
+    std::cout << "  " # def_name ": " << def_name << std::endl;
+
+class CustomOutput : public TCLAP::StdOutput
+{
+public:
+    virtual void version(TCLAP::CmdLineInterface& c)
+    {
+        std::cout << "mklittlefs ver. " VERSION << std::endl;
+        const char* configName = BUILD_CONFIG_NAME;
+        if (configName[0] == '-') {
+            configName += 1;
+        }
+        std::cout << "Build configuration name: " << configName << std::endl;
+        std::cout << "LittleFS ver. " << LITTLEFS_VERSION << std::endl;
+        const char* buildConfig = BUILD_CONFIG;
+        std::cout << "Extra build flags: " << (strlen(buildConfig) ? buildConfig : "(none)") << std::endl;
+        std::cout << "LittleFS configuration:" << std::endl;
+        PRINT_INT_MACRO(LFS_NAME_MAX);
+        PRINT_INT_MACRO(LFS_FILE_MAX);
+        PRINT_INT_MACRO(LFS_ATTR_MAX);
+    }
+};
+
+#undef PRINT_INT_MACRO
+
 void processArgs(int argc, const char** argv) {
     TCLAP::CmdLine cmd("", ' ', VERSION);
+    CustomOutput output;
+    cmd.setOutput(&output);
+
     TCLAP::ValueArg<std::string> packArg( "c", "create", "create littlefs image from a directory", true, "", "pack_dir");
     TCLAP::ValueArg<std::string> unpackArg( "u", "unpack", "unpack littlefs image to a directory", true, "", "dest_dir");
     TCLAP::SwitchArg listArg( "l", "list", "list files in littlefs image", false);
