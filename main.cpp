@@ -607,6 +607,11 @@ bool unpackFiles(std::string sDest) {
 // Actions
 
 int actionPack() {
+    if (!s_imageSize) {
+        std::cerr << "error: image size not specified, can't create filesystem" << std::endl;
+        return 1;
+    }
+
     s_flashmem.resize(s_imageSize, 0xff);
 
     FILE* fdres = fopen(s_imageName.c_str(), "wb");
@@ -639,7 +644,6 @@ int actionPack() {
  */
 int actionUnpack(void) {
     int ret = 0;
-    s_flashmem.resize(s_imageSize, 0xff);
 
     // open littlefs image
     FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
@@ -647,6 +651,11 @@ int actionUnpack(void) {
         std::cerr << "error: failed to open image file" << std::endl;
         return 1;
     }
+
+    fseek(fdsrc, 0L, SEEK_END);
+    int filesize = s_imageSize ? s_imageSize : ftell(fdsrc);
+    fseek(fdsrc, 0L, SEEK_SET);
+    s_flashmem.resize(filesize, 0xff);
 
     // read content into s_flashmem
     if (s_flashmem.size()/4 != fread(&s_flashmem[0], 4, s_flashmem.size()/4, fdsrc)) {
@@ -673,13 +682,17 @@ int actionUnpack(void) {
 
 
 int actionList() {
-    s_flashmem.resize(s_imageSize, 0xff);
-
     FILE* fdsrc = fopen(s_imageName.c_str(), "rb");
     if (!fdsrc) {
         std::cerr << "error: failed to open image file" << std::endl;
         return 1;
     }
+
+    fseek(fdsrc, 0L, SEEK_END);
+    int filesize = s_imageSize ? s_imageSize : ftell(fdsrc);
+    fseek(fdsrc, 0L, SEEK_SET);
+    s_flashmem.resize(filesize, 0xff);
+
     if (s_flashmem.size()/4 != fread(&s_flashmem[0], 4, s_flashmem.size()/4, fdsrc)) {
         std::cerr << "error: couldn't read image file" << std::endl;
         return 1;
@@ -703,7 +716,7 @@ void processArgs(int argc, const char** argv) {
     TCLAP::ValueArg<std::string> unpackArg( "u", "unpack", "unpack littlefs image to a directory", true, "", "dest_dir");
     TCLAP::SwitchArg listArg( "l", "list", "list files in littlefs image", false);
     TCLAP::UnlabeledValueArg<std::string> outNameArg( "image_file", "littlefs image file", true, "", "image_file"  );
-    TCLAP::ValueArg<int> imageSizeArg( "s", "size", "fs image size, in bytes", false, 0x10000, "number" );
+    TCLAP::ValueArg<int> imageSizeArg( "s", "size", "fs image size, in bytes", false, 0, "number" );
     TCLAP::ValueArg<int> pageSizeArg( "p", "page", "fs page size, in bytes", false, 256, "number" );
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
     TCLAP::SwitchArg addAllFilesArg( "a", "all-files", "when creating an image, include files which are normally ignored; currently only applies to '.DS_Store' files and '.git' directories", false);
