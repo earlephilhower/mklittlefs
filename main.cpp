@@ -246,7 +246,11 @@ int addFilesFromFile(std::string const& dirname, std::string const& fromFile) {
     while ((linelen = getline(&srcpath, &len, listing)) != -1) {
         if (!linelen) continue;
         if (srcpath[linelen - 1] == '\n') {
-            srcpath[linelen - 1] = '\0';
+            if (linelen - 1 > 0 && srcpath[linelen - 2] == '\r') {
+                srcpath[linelen - 2] = '\0';
+            } else {
+                srcpath[linelen - 1] = '\0';
+            }
         }
         std::string fullpath = dirname + srcpath;
         if (addFile((char*)srcpath, fullpath.c_str()) != 0) {

@@ -77,10 +77,13 @@ test_from_file() {
 
     touch from_file/A.js
     touch from_file/B.js
+    touch from_file/C.js
     touch from_file/.DS_Store
 
+    CR=$'\r'
     cat > from_file/listing.txt <<EOF
 /A.js
+/C.js$CR
 /.DS_Store
 EOF
 
@@ -88,12 +91,12 @@ EOF
 
     listing=$(${MKLITTLEFS} -l ${fn})
     lines=$(echo "${listing}" | wc -l | xargs echo -n)
-    if [[ ${lines} != 3 ]]; then
+    if [[ ${lines} != 4 ]]; then
         echo "$listing"
         echo "Wrong number of lines from listing: ${lines}"
         exit 1
     fi
-    for i in A.js .DS_Store; do
+    for i in A.js C.js .DS_Store; do
         if [[ $(echo "${listing}" | grep "/${i}") == "" ]]; then
             echo "Didn't find ${i}"
             exit 1
