@@ -41,6 +41,7 @@ static std::string s_imageName;
 static uint32_t s_imageSize;
 static uint32_t s_pageSize;
 static uint32_t s_blockSize;
+static std::string s_fromFile;
 
 enum Action { ACTION_NONE, ACTION_PACK, ACTION_UNPACK, ACTION_LIST };
 static Action s_action = ACTION_NONE;
@@ -229,6 +230,34 @@ int addFile(char* name, const char* path) {
         lfs_setattr(&s_fs, name, 'c', (const void *)&ftime, sizeof(ftime));
     }
     return 0;
+}
+
+int addFilesFromFile(std::string const& dirname, std::string const& fromFile) {
+    FILE* listing = fopen(fromFile.c_str(), "rb");
+    if (!listing) {
+        std::cerr << "error: failed to open " << fromFile << " for reading" << std::endl;
+        return 1;
+    }
+
+    char* srcpath = NULL;
+    size_t len = 0;
+    bool error = false;
+    ssize_t linelen;
+    while ((linelen = getline(&srcpath, &len, listing)) != -1) {
+        if (!linelen) continue;
+        if (srcpath[linelen - 1] == '\n') {
+            srcpath[linelen - 1] = '\0';
+        }
+        std::string fullpath = dirname + srcpath;
+        if (addFile((char*)srcpath, fullpath.c_str()) != 0) {
+            std::cerr << "error adding file " << srcpath << std::endl;
+            error = true;
+            break;
+        }
+    }
+    fclose(listing);
+
+    return error;
 }
 
 int addFiles(const char* dirname, const char* subPath) {
@@ -621,7 +650,13 @@ int actionPack() {
     }
 
     littlefsFormat();
-    int result = addFiles(s_dirName.c_str(), "/");
+
+    int result;
+    if (s_fromFile.empty()) {
+        result = addFiles(s_dirName.c_str(), "/");
+    } else {
+        result = addFilesFromFile(s_dirName, s_fromFile);
+    }
 
     // Set creation/modification time of volume on root
     time_t ct = time(NULL);
@@ -750,12 +785,14 @@ void processArgs(int argc, const char** argv) {
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
     TCLAP::SwitchArg addAllFilesArg( "a", "all-files", "when creating an image, include files which are normally ignored; currently only applies to '.DS_Store' files and '.git' directories", false);
     TCLAP::ValueArg<int> debugArg( "d", "debug", "Debug level. 0 means no debug output.", false, 0, "0-5" );
+    TCLAP::ValueArg<std::string> fromFileArg( "T", "from-file", "when creating an image, include paths in from_file instead of scanning pack_dir", false, "", "from_file");
 
     cmd.add( imageSizeArg );
     cmd.add( pageSizeArg );
     cmd.add( blockSizeArg );
     cmd.add( addAllFilesArg );
     cmd.add( debugArg );
+    cmd.add( fromFileArg );
     std::vector<TCLAP::Arg*> args = {&packArg, &unpackArg, &listArg};
     cmd.xorAdd( args );
     cmd.add( outNameArg );
@@ -768,6 +805,7 @@ void processArgs(int argc, const char** argv) {
 
     if (packArg.isSet()) {
         s_dirName = packArg.getValue();
+        s_fromFile = fromFileArg.getValue();
         s_action = ACTION_PACK;
     } else if (unpackArg.isSet()) {
         s_dirName = unpackArg.getValue();
