@@ -10,7 +10,7 @@ if [[ $# != 1 ]]; then
 fi
 
 tests_dir=$(cd ${1} && pwd -P)
-work_dir=$(mktemp -d -t "${0}.")
+work_dir=$(mktemp -d)
 
 if [[ ! "$work_dir" || ! -d "$work_dir" ]]; then
     echo "Failed to create working dir"
