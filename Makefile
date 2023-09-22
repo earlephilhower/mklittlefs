@@ -104,4 +104,7 @@ clean:
 format-check: $(DIFF_FILES)
 	@rm -f $(DIFF_FILES)
 
-.PHONY: all clean dist format-check
+test: $(TARGET)
+	@./run_tests.sh tests
+
+.PHONY: all clean dist format-check test

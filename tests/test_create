@@ -1,0 +1,120 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+
+test_empty() {
+    fn=empty.img
+    size=1048576
+
+    mkdir empty
+    ${MKLITTLEFS} -c empty -s ${size} ${fn}
+    listing=$(${MKLITTLEFS} -l ${fn})
+    lines=$(echo "${listing}" | wc -l | xargs echo -n)
+    if [[ ${lines} != 1 ]]; then
+        echo "Too many lines from empty listing: ${lines}"
+        exit 1
+    fi
+    if [[ "${listing}" != "Creation time:"* ]]; then
+        echo "Didn't get expected line, got ${listing}"
+        exit 1
+    fi
+    actual_size=$(wc -c ${fn} | sed -e 's/^ *\([^ ][^ ]*\) .*$/\1/')
+    if [[ ${actual_size} != ${size} ]]; then
+        echo "Image produced is wrong size: ${actual_size}"
+        exit 1
+    fi
+}
+
+test_include_all_files() {
+    fn=include_all_files.img
+    size=1048576
+
+    mkdir include_all_files
+
+    touch include_all_files/app.js
+
+    # Should match list in main.cpp
+    touch include_all_files/.DS_Store
+    mkdir include_all_files/.git
+    touch include_all_files/.gitignore
+    touch include_all_files/.gitmodules
+
+    # By default should pick up only app.js
+    ${MKLITTLEFS} -c include_all_files -s ${size} ${fn} &>/dev/null
+    listing=$(${MKLITTLEFS} -l ${fn})
+    lines=$(echo "${listing}" | wc -l | xargs echo -n)
+    if [[ ${lines} != 2 ]]; then
+        echo "Wrong number of lines from default listing: ${lines}"
+        exit 1
+    fi
+    if [[ $(echo "${listing}" | grep "/app.js") == "" ]]; then
+        echo "Didn't find app.js"
+        exit 1
+    fi
+
+    # With -a should get all files
+    ${MKLITTLEFS} -a -c include_all_files -s ${size} ${fn} &>/dev/null
+    listing=$(${MKLITTLEFS} -l ${fn})
+    lines=$(echo "${listing}" | wc -l | xargs echo -n)
+    if [[ ${lines} != 5 ]]; then
+        echo "Wrong number of lines from -a listing: ${lines}"
+        exit 1
+    fi
+    for i in app.js .DS_Store .git .gitignore .gitmodules; do
+        if [[ $(echo "${listing}" | grep "/${i}") == "" ]]; then
+            echo "Didn't find ${i}"
+            exit 1
+        fi
+    done
+}
+
+test_from_file() {
+    fn=from_file.img
+    size=1048576
+
+    mkdir from_file
+
+    touch from_file/A.js
+    touch from_file/B.js
+    touch from_file/C.js
+    touch from_file/.DS_Store
+
+    CR=$'\r'
+    cat > from_file/listing.txt <<EOF
+/A.js
+/C.js$CR
+/.DS_Store
+EOF
+
+    ${MKLITTLEFS} -c from_file -T from_file/listing.txt -s ${size} ${fn} &>/dev/null
+
+    listing=$(${MKLITTLEFS} -l ${fn})
+    lines=$(echo "${listing}" | wc -l | xargs echo -n)
+    if [[ ${lines} != 4 ]]; then
+        echo "$listing"
+        echo "Wrong number of lines from listing: ${lines}"
+        exit 1
+    fi
+    for i in A.js C.js .DS_Store; do
+        if [[ $(echo "${listing}" | grep "/${i}") == "" ]]; then
+            echo "Didn't find ${i}"
+            exit 1
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+
+cd $WORKDIR
+
+for test in \
+    test_empty \
+    test_include_all_files \
+    test_from_file \
+; do
+    echo "Executing ${test}"
+    ($test)
+done
+
+exit 0
