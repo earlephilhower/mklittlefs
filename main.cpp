@@ -232,18 +232,46 @@ int addFile(char* name, const char* path) {
     return 0;
 }
 
+// Getline doesn't exist in WIN32/64, so replace with our own simplified version
+ssize_t readline(char **line, FILE *f) {
+    // Clear out any old ptr
+    if (*line) {
+        free(*line);
+        *line = nullptr;
+    }
+    int lineSize = 0; // Will be extended on first byte
+    int cnt = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        cnt++;
+        if (cnt >= lineSize - 1) {
+            // Got too big, extend
+            lineSize += 128;
+            *line = (char*)realloc(*line, lineSize);
+            if (!*line) {
+                return -1; // OOM
+            }
+        }
+        (*line)[cnt - 1] = c;
+        (*line)[cnt] = 0;
+        if (c == '\n') {
+            return cnt;
+        }
+    }
+    return -1;
+}
+
 int addFilesFromFile(std::string const& dirname, std::string const& fromFile) {
-    FILE* listing = fopen(fromFile.c_str(), "rb");
+    FILE* listing = fopen(fromFile.c_str(), "r");
     if (!listing) {
         std::cerr << "error: failed to open " << fromFile << " for reading" << std::endl;
         return 1;
     }
 
-    char* srcpath = NULL;
-    size_t len = 0;
+    char *srcpath = nullptr;
     bool error = false;
     ssize_t linelen;
-    while ((linelen = getline(&srcpath, &len, listing)) != -1) {
+    while ((linelen = readline(&srcpath, listing)) != -1) {
         if (!linelen) continue;
         if (srcpath[linelen - 1] == '\n') {
             if (linelen - 1 > 0 && srcpath[linelen - 2] == '\r') {
@@ -757,6 +785,7 @@ class CustomOutput : public TCLAP::StdOutput
 public:
     virtual void version(TCLAP::CmdLineInterface& c)
     {
+        (void) c;
         std::cout << "mklittlefs ver. " VERSION << std::endl;
         const char* configName = BUILD_CONFIG_NAME;
         if (configName[0] == '-') {
