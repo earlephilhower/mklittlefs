@@ -456,7 +456,7 @@ void listFiles(const char *path) {
         time_t t;
         if (it.type == LFS_TYPE_DIR) {
             char newpath[PATH_MAX];
-            sprintf(newpath, "%s/%s", path, it.name);
+            snprintf(newpath, sizeof(newpath), "%s/%s", path, it.name);
             if (lfs_getattr(&s_fs, newpath, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) { // and/or check 'c' as well?
                 t = (time_t)ftime;
                 std::cout << "<dir>" << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&t)); 
@@ -617,9 +617,9 @@ bool unpackLFSDirFiles(std::string sDest, const char *lfsDir) {
         } else if (ent.type == LFS_TYPE_DIR) {
             char newPath[PATH_MAX];
             if (lfsDir[0]) {
-                sprintf(newPath, "%s/%s/", lfsDir, ent.name);
+                snprintf(newPath, sizeof(newPath) , "%s/%s/", lfsDir, ent.name);
             } else {
-                sprintf(newPath, "%s/", ent.name);
+                snprintf(newPath, sizeof(newPath), "%s/", ent.name);
             }
             std::string newDest = sDest + ent.name + "/";
             dirCreate(newDest.c_str());
