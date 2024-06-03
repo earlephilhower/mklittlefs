@@ -1,5 +1,3 @@
-# Manually started action to build Picotool/OpenOCD for Windows and upload to an artifact
-
 name: Build All Windows
 on: [workflow_dispatch]
 jobs:
