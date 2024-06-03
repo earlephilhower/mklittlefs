@@ -159,7 +159,7 @@ jobs:
         name: ${{matrix.env}}-w64-mingw32-mklittlefs.zip
         path: ${{matrix.env}}-w64-mingw32-mklittlefs-*.zip
 
-    make-release:
+  make-release:
     needs: [build-linux, build-mac-arm, build-mac, build-windows]
     runs-on: ubuntu-latest
     permissions:
