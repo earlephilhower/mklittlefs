@@ -1,0 +1,191 @@
+name: Build All and Make Release
+on: [workflow_dispatch]
+jobs:
+  build-linux:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Install cross compilation tools
+      run: |
+           sudo apt-get install -y gcc g++ make git gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf gcc-aarch64-linux-gnu g++-aarch64-linux-gnu zip gcc-i686-linux-gnu g++-i686-linux-gnu
+
+    - name: Build mklittlefs x86-64
+      run: |
+        tgt=linux pfx=x86_64-linux-gnu exe="" AHOST="x86_64-pc-linux-gnu" TARGET_OS=${tgt} CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mklittlefs${exe} BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs tmp/mklittlefs/.
+        cd tmp
+        zip -rq ../x86_64-linux-gnu-${name}.zip mklittlefs
+        cd ..
+        rm -rf tmp
+        make clean
+    - name: Build mklittlefs aarch64
+      run: |
+        tgt=linux pfx=aarch64-linux-gnu exe="" AHOST="aarch64-linux-gnu" TARGET_OS=${tgt} CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mklittlefs${exe} BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs tmp/mklittlefs/.
+        cd tmp
+        zip -rq ../aarch64-linux-gnu-${name}.zip mklittlefs
+        cd ..
+        rm -rf tmp
+        make clean
+    - name: Build mklittlefs arm
+      run: |
+        tgt=linux pfx=arm-linux-gnueabihf exe="" AHOST="arm-linux-gnueabihf" TARGET_OS=${tgt} CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mklittlefs${exe} BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs tmp/mklittlefs/.
+        cd tmp
+        zip -rq ../arm-linux-gnueabihf-${name}.zip mklittlefs
+        cd ..
+        rm -rf tmp
+        make clean
+
+    - name: Upload mklittlefs x86-64
+      uses: actions/upload-artifact@v4
+      with:
+        name: x86_64-linux-gnu-mklittlefs.zip
+        path: x86_64-linux-gnu-mklittlefs-*.zip
+    - name: Upload mklittlefs aarch64
+      uses: actions/upload-artifact@v4
+      with:
+        name: aarch64-linux-gnu-mklittlefs.zip
+        path: aarch64-linux-gnu-mklittlefs-*.zip
+    - name: Upload mklittlefs arm-linux-gnueabihf
+      uses: actions/upload-artifact@v4
+      with:
+        name: arm-linux-gnueabihf-mklittlefs.zip
+        path: arm-linux-gnueabihf-mklittlefs-*.zip
+
+  build-mac-arm:
+    runs-on: macos-14
+    steps:
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '14.3.1'
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build mklittlefs MacARM
+      run: |
+        rm -f *.json *.gz *.zip
+        pfx=aarch64-apple-darwin20
+        AHOST=aarch64-apple-darwin TARGET_OS=osx CC=gcc CXX=g++ STRIP=strip make clean mklittlefs BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+    - name: Package mklittlefs MacARM
+      run: |
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs tmp/mklittlefs/.
+        cd tmp
+        zip -rq ../aarch64-apple-darwin-${name}.zip mklittlefs
+        cd ..
+        rm -rf tmp
+    - name: Upload mklittlefs MacARM
+      uses: actions/upload-artifact@v4
+      with:
+        name: aarch64-apple-darwin-mklittlefs.zip
+        path: aarch64-apple-darwin-mklittlefs-*.zip
+
+  build-mac:
+    runs-on: macos-12
+    steps:
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: '13.1.0'
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build mklittlefs Mac86
+      run: |
+        rm -f *.json *.gz *.zip
+        pfx=x86_64-apple-darwin20
+        AHOST=x86_64-apple-darwin TARGET_OS=osx CC=gcc CXX=g++ STRIP=strip make clean mklittlefs BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+    - name: Package mklittlefs Mac86
+      run: |
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs tmp/mklittlefs/.
+        cd tmp
+        zip -rq ../x86_64-apple-darwin-${name}.zip mklittlefs
+        cd ..
+        rm -rf tmp
+    - name: Upload mklittlefs Mac86
+      uses: actions/upload-artifact@v4
+      with:
+        name: x86_64-apple-darwin-mklittlefs.zip
+        path: x86_64-apple-darwin-mklittlefs-*.zip
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    strategy:
+      matrix:
+        include:
+          - { sys: mingw64, env: x86_64 }
+          - { sys: mingw32, env: i686 }
+    steps:
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        install: development mingw-w64-${{matrix.env}}-make git mingw-w64-${{matrix.env}}-toolchain zip
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Build mklittlefs ${{matrix.env}}
+      run: |
+        rm -f *.json *.gz *.zip
+        pfx=${{matrix.env}}-w64-mingw32
+        AHOST=${{matrix.env}}-mingw32 TARGET_OS=windows CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=strip mingw32-make clean mklittlefs.exe BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+    - name: Package mklittlefs ${{matrix.env}}
+      run: |
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs.exe tmp/mklittlefs/.
+        cd tmp
+        zip -rq ../${{matrix.env}}-w64-mingw32-${name}.zip mklittlefs
+        cd ..
+        rm -rf tmp
+    - name: Upload mklittlefs ${{matrix.env}}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{matrix.env}}-w64-mingw32-mklittlefs.zip
+        path: ${{matrix.env}}-w64-mingw32-mklittlefs-*.zip
+
+    make-release:
+    needs: [build-linux, build-mac-arm, build-mac, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+    - name: Renaming artifacts
+      run: |
+          rev=$(git rev-parse --short HEAD)
+          mkdir release
+          mkdir tmp && unzip ../x86_64-apple-darwin-mklittlefs.zip && unzip *zip && tar zcvf ../release/x86_64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && unzip ../aarch64-apple-darwin-mklittlefs.zip && unzip *zip && tar zcvf ../release/aarch64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mv i686-w64-mingw32-mklittlefs.zip ./release/i686-w64-mingw32-mklittlefs-${rev}.zip
+          mv x86_64-w64-mingw32-mklittlefs.zip ./release/x86_64-w64-mingw32-mklittlefs-${rev}.zip
+          mkdir tmp && unzip ../x86_64-linux-gnu-mklittlefs.zip && unzip *zip && tar zcvf ../release/x86_64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && unzip ../aarch64-linux-gnu-mklittlefs.zip && unzip *zip && tar zcvf ../release/aarch64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && unzip ../arm-linux-gnueabihf-mklittlefs.zip && unzip *zip && tar zcvf ../release/arm-linux-gnueabihf-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          ls -l release
+    - name: Drafting release
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: "release/*"
+        draft: true
+        body: "Draft release"
+        tag: "test"
