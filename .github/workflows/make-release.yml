@@ -183,7 +183,7 @@ jobs:
           mkdir tmp && unzip ../arm-linux-gnueabihf-mklittlefs.zip && unzip *zip && tar zcvf ../release/arm-linux-gnueabihf-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
           ls -l release
     - name: Drafting release
-    - uses: ncipollo/release-action@v1
+      uses: ncipollo/release-action@v1
       with:
         artifacts: "release/*"
         draft: true
