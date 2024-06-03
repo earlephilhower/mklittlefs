@@ -1,0 +1,47 @@
+# Manually started action to build Picotool/OpenOCD for Windows and upload to an artifact
+
+name: Build All Windows
+on: [workflow_dispatch]
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    strategy:
+      matrix:
+        include:
+          - { sys: mingw64, env: x86_64 }
+          - { sys: mingw32, env: i686 }
+    steps:
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: ${{matrix.sys}}
+        install: development mingw-w64-${{matrix.env}}-make mingw-w64-${{matrix.env}}-pkg-config mingw-w64-${{matrix.env}}-autotools texinfo mingw-w64-${{matrix.env}}-libusb mingw-w64-${{matrix.env}}-hidapi git mingw-w64-${{matrix.env}}-toolchain patch mingw-w64-${{matrix.env}}-cmake pkg-config
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Build mklittlefs ${{matrix.env}}
+      run: |
+        rm -f *.json *.gz *.zip
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        pfx=${{matrix.env}}-w64-mingw32
+        exe=.exe
+        AHOST=${{matrix.env}}-mingw32 TARGET_OS=windows CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=${pfx}-strip make clean mklittlefs${exe} BUILD_CONFIG_NAME="-arduino-esp8266" CPPFLAGS="-DSPIFFS_USE_MAGIC_LENGTH=0 -DSPIFFS_ALIGNED_OBJECT_INDEX_TABLES=1"
+        mkdir -p tmp/mklittlefs
+        mv mklittlefs${exe} tmp/mklittlefs/.
+        cd tmp
+        if [ "${exe}" == "" ]; then
+            tarball=${pfx}-$name.tar.gz
+            tar zcvf ../${tarball} mklittlefs
+        else
+            tarball=${pfx}-$name.zip
+            zip -rq ../${tarball} mklittlefs
+        fi
+        cd ..
+        rm -rf tmp
+    - name: Upload mklittlefs ${{matrix.env}}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{matrix.env}}-w64-mingw32.${{matrix.env}}.tar
+        path: openocd.${{matrix.env}}.tar
