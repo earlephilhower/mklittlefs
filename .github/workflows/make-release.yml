@@ -1,5 +1,10 @@
-name: Build All and Make Release
-on: [workflow_dispatch]
+name: Build all and make release on tag
+
+on:
+  push:
+    tags:
+    - '*'
+
 jobs:
   build-linux:
     runs-on: ubuntu-20.04
@@ -189,5 +194,4 @@ jobs:
       with:
         artifacts: "release/*"
         draft: true
-        body: "Draft release"
-        tag: "test"
+        generateReleaseNotes: true
