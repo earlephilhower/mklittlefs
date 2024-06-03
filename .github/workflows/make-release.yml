@@ -170,20 +170,22 @@ jobs:
         submodules: true
     - name: Download all artifacts
       uses: actions/download-artifact@v4
+      with:
+        path: .
     - name: Renaming artifacts
       run: |
           rev=$(git rev-parse --short HEAD)
           mkdir release
-          mkdir tmp && unzip ../x86_64-apple-darwin-mklittlefs.zip && unzip *zip && tar zcvf ../release/x86_64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
-          mkdir tmp && unzip ../aarch64-apple-darwin-mklittlefs.zip && unzip *zip && tar zcvf ../release/aarch64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
-          mv i686-w64-mingw32-mklittlefs.zip ./release/i686-w64-mingw32-mklittlefs-${rev}.zip
-          mv x86_64-w64-mingw32-mklittlefs.zip ./release/x86_64-w64-mingw32-mklittlefs-${rev}.zip
-          mkdir tmp && unzip ../x86_64-linux-gnu-mklittlefs.zip && unzip *zip && tar zcvf ../release/x86_64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
-          mkdir tmp && unzip ../aarch64-linux-gnu-mklittlefs.zip && unzip *zip && tar zcvf ../release/aarch64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
-          mkdir tmp && unzip ../arm-linux-gnueabihf-mklittlefs.zip && unzip *zip && tar zcvf ../release/arm-linux-gnueabihf-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && cd tmp && unzip ../x86_64-apple-darwin-mklittlefs.zip/*zip && tar zcvf ../release/x86_64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && cd tmp && unzip ../aarch64-apple-darwin-mklittlefs.zip/*zip && tar zcvf ../release/aarch64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mv i686-w64-mingw32-mklittlefs.zip/*zip ./release/i686-w64-mingw32-mklittlefs-${rev}.zip
+          mv x86_64-w64-mingw32-mklittlefs.zip/*zip ./release/x86_64-w64-mingw32-mklittlefs-${rev}.zip
+          mkdir tmp && cd tmp && unzip ../x86_64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/x86_64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && cd tmp && unzip ../aarch64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/aarch64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mkdir tmp && cd tmp && unzip ../arm-linux-gnueabihf-mklittlefs.zip/*zip && tar zcvf ../release/arm-linux-gnueabihf-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
           ls -l release
     - name: Drafting release
-    - uses: ncipollo/release-action@v1
+      uses: ncipollo/release-action@v1
       with:
         artifacts: "release/*"
         draft: true
