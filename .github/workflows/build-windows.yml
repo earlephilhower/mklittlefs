@@ -25,17 +25,18 @@ jobs:
       run: |
         rm -f *.json *.gz *.zip
         pfx=${{matrix.env}}-w64-mingw32
-        AHOST=${{matrix.env}}-mingw32 TARGET_OS=windows CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=echo mingw32-make clean mklittlefs.exe BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+        AHOST=${{matrix.env}}-mingw32 TARGET_OS=windows CC=${pfx}-gcc CXX=${pfx}-g++ STRIP=strip mingw32-make clean mklittlefs.exe BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
     - name: Package mklittlefs ${{matrix.env}}
       run: |
+        name=mklittlefs-$(git rev-parse --short HEAD)
         mkdir -p tmp/mklittlefs
         mv mklittlefs.exe tmp/mklittlefs/.
         cd tmp
-        zip -rq ../${{matrix.env}}-w64-mingw32-mklittlefs.zip mklittlefs
+        zip -rq ../${{matrix.env}}-w64-mingw32-${name}.zip mklittlefs
         cd ..
         rm -rf tmp
     - name: Upload mklittlefs ${{matrix.env}}
       uses: actions/upload-artifact@v4
       with:
         name: ${{matrix.env}}-w64-mingw32-mklittlefs.zip
-        path: ${{matrix.env}}-w64-mingw32-mklittlefs.zip
+        path: ${{matrix.env}}-w64-mingw32-mklittlefs-*.zip
