@@ -1,6 +1,3 @@
-# Manually started action to build Picotool and OpenOCD for Mac and upload to an artifact
-
-
 name: Build MacOS ARM
 on: [workflow_dispatch]
 jobs:
@@ -18,8 +15,8 @@ jobs:
       run: |
         rm -f *.json *.gz *.zip
         pfx=aarch64-apple-darwin20
-        AHOST=aarch64-apple-darwin TARGET_OS=osx CC=gcc CXX=g++ STRIP=strip mingw32-make clean mklittlefs BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
-    - name: Package mklittlefs Mac86
+        AHOST=aarch64-apple-darwin TARGET_OS=osx CC=gcc CXX=g++ STRIP=strip make clean mklittlefs BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+    - name: Package mklittlefs MacARM
       run: |
         name=mklittlefs-$(git rev-parse --short HEAD)
         mkdir -p tmp/mklittlefs

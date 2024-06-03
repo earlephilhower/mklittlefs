@@ -17,7 +17,7 @@ jobs:
       run: |
         rm -f *.json *.gz *.zip
         pfx=x86_64-apple-darwin20
-        AHOST=x86_64-apple-darwin TARGET_OS=osx CC=gcc CXX=g++ STRIP=strip mingw32-make clean mklittlefs BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
+        AHOST=x86_64-apple-darwin TARGET_OS=osx CC=gcc CXX=g++ STRIP=strip make clean mklittlefs BUILD_CONFIG_NAME="-arduino" CPPFLAGS=""
     - name: Package mklittlefs Mac86
       run: |
         name=mklittlefs-$(git rev-parse --short HEAD)
