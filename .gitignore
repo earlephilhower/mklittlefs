@@ -11,3 +11,6 @@ build
 .project
 .cproject
 .settings
+
+# binaries
+mklittlefs
