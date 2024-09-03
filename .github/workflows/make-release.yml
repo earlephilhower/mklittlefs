@@ -155,6 +155,7 @@ jobs:
         name=mklittlefs-$(git rev-parse --short HEAD)
         mkdir -p tmp/mklittlefs
         mv mklittlefs.exe tmp/mklittlefs/.
+        cp /mingw*/bin/libwinpthread*.dll tmp/mklittlefs/.
         cd tmp
         zip -rq ../${{matrix.env}}-w64-mingw32-${name}.zip mklittlefs
         cd ..
