@@ -30,7 +30,7 @@ ifeq ($(TARGET_OS),windows)
 	ARCHIVE ?= zip
 	TARGET := mklittlefs.exe
 	TARGET_CFLAGS = -mno-ms-bitfields
-	TARGET_LDFLAGS = -Wl,-static -static-libgcc -static-libstdc++
+	TARGET_LDFLAGS = -Wl,-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -lstdc++ -lpthread -Wl,-Bdynamic
 else
 	ARCHIVE ?= tar
 	TARGET := mklittlefs
