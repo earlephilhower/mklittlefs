@@ -48,7 +48,7 @@ endif
 
 STRIP ?= strip
 
-VERSION ?= $(shell git describe --always)
+VERSION ?= $(shell git describe --tag)
 LITTLEFS_VERSION := $(shell git -C littlefs describe --tags || echo "unknown")
 BUILD_CONFIG_NAME ?= -generic
 
