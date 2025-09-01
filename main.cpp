@@ -457,18 +457,18 @@ void listFiles(const char *path) {
             char newpath[PATH_MAX];
             snprintf(newpath, sizeof(newpath), "%s/%s", path, it.name);
             if (lfs_getattr(&s_fs, newpath, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) { // and/or check 'c' as well?
-                std::cout << "<dir>" << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&ftime));
+                std::cout << "<dir>" << '\t' << path << it.name  << '\t' << asctime(gmtime(&ftime));
             } else {
-                std::cout << "<dir>" << '\t' << path << "/" << it.name << std::endl;
+                std::cout << "<dir>" << '\t' << path << it.name << std::endl;
             }
             listFiles(newpath);
         } else {
             char buff[PATH_MAX];
             snprintf(buff, sizeof(buff), "%s/%s",  path, it.name);
             if (lfs_getattr(&s_fs, buff, 't', (uint8_t *)&ftime, sizeof(ftime)) >= 0) { // and/or check 'c' as well?
-                std::cout << it.size << '\t' << path << "/" << it.name  << '\t' << asctime(gmtime(&ftime));
+                std::cout << it.size << '\t' << path << it.name  << '\t' << asctime(gmtime(&ftime));
             } else {
-                std::cout << it.size << '\t' << path << "/" << it.name << std::endl;
+                std::cout << it.size << '\t' << path << it.name << std::endl;
             }
         }
     }
@@ -763,7 +763,7 @@ int actionList() {
     }
     fclose(fdsrc);
     littlefsMount();
-    listFiles("");
+    listFiles("/");
 
     time_t ct;
     if (lfs_getattr(&s_fs, "/", 't', &ct, sizeof(ct)) >= 0) { // and/or check 'c' as well?
