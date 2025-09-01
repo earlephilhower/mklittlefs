@@ -69,8 +69,6 @@ jobs:
 
   build-mac-arm:
     runs-on: macos-14
-    outputs:
-      sha256_arm: ${{ steps.hash.outputs.sha256_arm }}
     steps:
     - uses: maxim-lobanov/setup-xcode@v1
       with:
@@ -93,11 +91,6 @@ jobs:
         tar zcvf ../aarch64-apple-darwin-${name}.tar.gz mklittlefs
         cd ..
         rm -rf tmp
-    - name: Calculate SHA256 for ARM Mac
-      id: hash
-      run: |
-        name=mklittlefs-$(git rev-parse --short HEAD)
-        echo "sha256_arm=$(shasum -a 256 aarch64-apple-darwin-${name}.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
     - name: Upload mklittlefs MacARM
       uses: actions/upload-artifact@v4
       with:
@@ -106,8 +99,6 @@ jobs:
 
   build-mac:
     runs-on: macos-13
-    outputs:
-      sha256_intel: ${{ steps.hash.outputs.sha256_intel }}
     steps:
     - uses: maxim-lobanov/setup-xcode@v1
       with:
@@ -130,11 +121,6 @@ jobs:
         tar zcvf ../x86_64-apple-darwin-${name}.tar.gz mklittlefs
         cd ..
         rm -rf tmp
-    - name: Calculate SHA256 for Intel Mac
-      id: hash
-      run: |
-        name=mklittlefs-$(git rev-parse --short HEAD)
-        echo "sha256_intel=$(shasum -a 256 x86_64-apple-darwin-${name}.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
     - name: Upload mklittlefs Mac86
       uses: actions/upload-artifact@v4
       with:
@@ -181,14 +167,12 @@ jobs:
         path: ${{matrix.env}}-w64-mingw32-mklittlefs-*.zip
 
   make-release:
-    needs: [build-linux, build-mac-arm, build-mac, build-windows]
+    needs: [build-linux, build-mac-arm, build-mac, build-windows, build-brewfile]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
       tag: ${{ steps.get_tag.outputs.tag }}
-      sha256_arm: ${{ needs.build-mac-arm.outputs.sha256_arm }}
-      sha256_intel: ${{ needs.build-mac.outputs.sha256_intel }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -204,7 +188,6 @@ jobs:
       run: |
           rev=$(git rev-parse --short HEAD)
           mkdir release
-          # Use pre-built tar.gz files for Mac
           mv x86_64-apple-darwin-mklittlefs.tar.gz/*tar.gz ./release/x86_64-apple-darwin-mklittlefs-${rev}.tar.gz
           mv aarch64-apple-darwin-mklittlefs.tar.gz/*tar.gz ./release/aarch64-apple-darwin-mklittlefs-${rev}.tar.gz
           mv i686-w64-mingw32-mklittlefs.zip/*zip ./release/i686-w64-mingw32-mklittlefs-${rev}.zip
@@ -212,6 +195,8 @@ jobs:
           mkdir tmp && cd tmp && unzip ../x86_64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/x86_64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
           mkdir tmp && cd tmp && unzip ../aarch64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/aarch64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
           mkdir tmp && cd tmp && unzip ../arm-linux-gnueabihf-mklittlefs.zip/*zip && tar zcvf ../release/arm-linux-gnueabihf-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          mv mklittlefs-source.zip release/.
+          mv homebrew-formula/mklittlefs.rb release/.
           ls -l release
     - name: Drafting release
       uses: ncipollo/release-action@v1
@@ -220,55 +205,57 @@ jobs:
         draft: true
         generateReleaseNotes: true
 
-  create-homebrew-formula:
-    needs: [make-release]
+  build-brewfile:
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     steps:
     - uses: actions/checkout@v4
-    - name: Create Homebrew Formula
+      with:
+        submodules: true
+        path: mklittlefs
+    - name: Create mklittlefs-source ZIP file
       run: |
+        (cd mklittlefs; zip -9r ../mklittlefs-source.zip .)
+    - name: Upload mklittlefs complete source zipfile (which will then be RE-ZIPPED by GH)
+      id: upload-src-step
+      uses: actions/upload-artifact@v4
+      with:
+        name: mklittlefs-source.zip
+        include-hidden-files: true
+        path: mklittlefs
+    - name: Make Brewfile update
+      run: |
+        sha=$(shasum -a 256 mklittlefs-source.zip | cut -f1 -d' ')
+        tag=${GITHUB_REF#refs/tags/}
+        tag=$(echo $tag | sed 's/refs.*/0.0.0/')
+        echo Making a new file with $sha and version $tag
         mkdir -p homebrew-formula
         cat > homebrew-formula/mklittlefs.rb << 'EOF'
         class Mklittlefs < Formula
-          desc "Tool to build and unpack LITTLEFS images"
-          homepage "https://github.com/${{ github.repository }}"
-          version "${{ needs.make-release.outputs.tag }}"
-
-          if Hardware::CPU.arm?
-            url "https://github.com/${{ github.repository }}/releases/download/${{ needs.make-release.outputs.tag }}/aarch64-apple-darwin-mklittlefs-$(git rev-parse --short HEAD).tar.gz"
-            sha256 "${{ needs.make-release.outputs.sha256_arm }}"
-          else
-            url "https://github.com/${{ github.repository }}/releases/download/${{ needs.make-release.outputs.tag }}/x86_64-apple-darwin-mklittlefs-$(git rev-parse --short HEAD).tar.gz"
-            sha256 "${{ needs.make-release.outputs.sha256_intel }}"
-          end
+          desc "Creates LittleFS images for ESP8266, ESP32, Pico RP2040, and RP2350"
+          homepage "https://github.com/earlephilhower/mklittlefs"
+          url "https://github.com/earlephilhower/mklittlefs/releases/download/$tag/mklittlefs-source.zip"
+          version "TAGHERE"
+          sha256 "SHAHERE"
+          license "MIT"
 
           def install
+            system "make", "BUILD_CONFIG_NAME=-#{version}"
             bin.install "mklittlefs"
           end
 
           test do
-            system "#{bin}/mklittlefs", "--help"
+            out = pipe_output("#{bin}/mklittlefs --version")
+            assert_match(/#{version}/, out)
           end
         end
         EOF
-
-        # Replace the commit hash in the file name
-        rev=$(git rev-parse --short HEAD)
-        sed -i "s/\$(git rev-parse --short HEAD)/${rev}/g" homebrew-formula/mklittlefs.rb
-
-        echo "Generated Homebrew formula:"
+        sed -i s/TAGHERE/$tag/g homebrew-formula/mklittlefs.rb
+        sed -i s/SHAHERE/$sha/g homebrew-formula/mklittlefs.rb
+        echo =============================
         cat homebrew-formula/mklittlefs.rb
-
+        echo =============================
     - name: Upload Homebrew Formula
       uses: actions/upload-artifact@v4
       with:
         name: homebrew-formula
         path: homebrew-formula/mklittlefs.rb
-
-    - name: Add formula to release
-      uses: ncipollo/release-action@v1
-      with:
-        artifacts: "homebrew-formula/mklittlefs.rb"
-        allowUpdates: true
-        updateOnlyUnreleased: true
