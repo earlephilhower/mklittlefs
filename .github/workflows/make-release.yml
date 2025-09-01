@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
     - uses: actions/checkout@v4
       with:
@@ -69,6 +69,8 @@ jobs:
 
   build-mac-arm:
     runs-on: macos-14
+    outputs:
+      sha256_arm: ${{ steps.hash.outputs.sha256_arm }}
     steps:
     - uses: maxim-lobanov/setup-xcode@v1
       with:
@@ -88,17 +90,24 @@ jobs:
         mkdir -p tmp/mklittlefs
         mv mklittlefs tmp/mklittlefs/.
         cd tmp
-        zip -rq ../aarch64-apple-darwin-${name}.zip mklittlefs
+        tar zcvf ../aarch64-apple-darwin-${name}.tar.gz mklittlefs
         cd ..
         rm -rf tmp
+    - name: Calculate SHA256 for ARM Mac
+      id: hash
+      run: |
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        echo "sha256_arm=$(shasum -a 256 aarch64-apple-darwin-${name}.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
     - name: Upload mklittlefs MacARM
       uses: actions/upload-artifact@v4
       with:
-        name: aarch64-apple-darwin-mklittlefs.zip
-        path: aarch64-apple-darwin-mklittlefs-*.zip
+        name: aarch64-apple-darwin-mklittlefs.tar.gz
+        path: aarch64-apple-darwin-mklittlefs-*.tar.gz
 
   build-mac:
     runs-on: macos-13
+    outputs:
+      sha256_intel: ${{ steps.hash.outputs.sha256_intel }}
     steps:
     - uses: maxim-lobanov/setup-xcode@v1
       with:
@@ -118,14 +127,19 @@ jobs:
         mkdir -p tmp/mklittlefs
         mv mklittlefs tmp/mklittlefs/.
         cd tmp
-        zip -rq ../x86_64-apple-darwin-${name}.zip mklittlefs
+        tar zcvf ../x86_64-apple-darwin-${name}.tar.gz mklittlefs
         cd ..
         rm -rf tmp
+    - name: Calculate SHA256 for Intel Mac
+      id: hash
+      run: |
+        name=mklittlefs-$(git rev-parse --short HEAD)
+        echo "sha256_intel=$(shasum -a 256 x86_64-apple-darwin-${name}.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
     - name: Upload mklittlefs Mac86
       uses: actions/upload-artifact@v4
       with:
-        name: x86_64-apple-darwin-mklittlefs.zip
-        path: x86_64-apple-darwin-mklittlefs-*.zip
+        name: x86_64-apple-darwin-mklittlefs.tar.gz
+        path: x86_64-apple-darwin-mklittlefs-*.tar.gz
 
   build-windows:
     runs-on: windows-latest
@@ -171,10 +185,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
+      sha256_arm: ${{ needs.build-mac-arm.outputs.sha256_arm }}
+      sha256_intel: ${{ needs.build-mac.outputs.sha256_intel }}
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: true
+    - name: Get tag
+      id: get_tag
+      run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
@@ -183,8 +204,9 @@ jobs:
       run: |
           rev=$(git rev-parse --short HEAD)
           mkdir release
-          mkdir tmp && cd tmp && unzip ../x86_64-apple-darwin-mklittlefs.zip/*zip && tar zcvf ../release/x86_64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
-          mkdir tmp && cd tmp && unzip ../aarch64-apple-darwin-mklittlefs.zip/*zip && tar zcvf ../release/aarch64-apple-darwin-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
+          # Use pre-built tar.gz files for Mac
+          mv x86_64-apple-darwin-mklittlefs.tar.gz/*tar.gz ./release/x86_64-apple-darwin-mklittlefs-${rev}.tar.gz
+          mv aarch64-apple-darwin-mklittlefs.tar.gz/*tar.gz ./release/aarch64-apple-darwin-mklittlefs-${rev}.tar.gz
           mv i686-w64-mingw32-mklittlefs.zip/*zip ./release/i686-w64-mingw32-mklittlefs-${rev}.zip
           mv x86_64-w64-mingw32-mklittlefs.zip/*zip ./release/x86_64-w64-mingw32-mklittlefs-${rev}.zip
           mkdir tmp && cd tmp && unzip ../x86_64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/x86_64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
@@ -197,3 +219,56 @@ jobs:
         artifacts: "release/*"
         draft: true
         generateReleaseNotes: true
+
+  create-homebrew-formula:
+    needs: [make-release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+    - uses: actions/checkout@v4
+    - name: Create Homebrew Formula
+      run: |
+        mkdir -p homebrew-formula
+        cat > homebrew-formula/mklittlefs.rb << 'EOF'
+        class Mklittlefs < Formula
+          desc "Tool to build and unpack LITTLEFS images"
+          homepage "https://github.com/${{ github.repository }}"
+          version "${{ needs.make-release.outputs.tag }}"
+
+          if Hardware::CPU.arm?
+            url "https://github.com/${{ github.repository }}/releases/download/${{ needs.make-release.outputs.tag }}/aarch64-apple-darwin-mklittlefs-$(git rev-parse --short HEAD).tar.gz"
+            sha256 "${{ needs.make-release.outputs.sha256_arm }}"
+          else
+            url "https://github.com/${{ github.repository }}/releases/download/${{ needs.make-release.outputs.tag }}/x86_64-apple-darwin-mklittlefs-$(git rev-parse --short HEAD).tar.gz"
+            sha256 "${{ needs.make-release.outputs.sha256_intel }}"
+          end
+
+          def install
+            bin.install "mklittlefs"
+          end
+
+          test do
+            system "#{bin}/mklittlefs", "--help"
+          end
+        end
+        EOF
+
+        # Replace the commit hash in the file name
+        rev=$(git rev-parse --short HEAD)
+        sed -i "s/\$(git rev-parse --short HEAD)/${rev}/g" homebrew-formula/mklittlefs.rb
+
+        echo "Generated Homebrew formula:"
+        cat homebrew-formula/mklittlefs.rb
+
+    - name: Upload Homebrew Formula
+      uses: actions/upload-artifact@v4
+      with:
+        name: homebrew-formula
+        path: homebrew-formula/mklittlefs.rb
+
+    - name: Add formula to release
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "homebrew-formula/mklittlefs.rb"
+        allowUpdates: true
+        updateOnlyUnreleased: true
