@@ -195,7 +195,7 @@ jobs:
           mkdir tmp && cd tmp && unzip ../x86_64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/x86_64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
           mkdir tmp && cd tmp && unzip ../aarch64-linux-gnu-mklittlefs.zip/*zip && tar zcvf ../release/aarch64-linux-gnu-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
           mkdir tmp && cd tmp && unzip ../arm-linux-gnueabihf-mklittlefs.zip/*zip && tar zcvf ../release/arm-linux-gnueabihf-mklittlefs-${rev}.tar.gz mklittlefs && cd .. && rm -rf tmp
-          mv mklittlefs-source.zip release/.
+          mv mklittlefs-source.zip/* release/.
           mv homebrew-formula/mklittlefs.rb release/.
           ls -l release
     - name: Drafting release
@@ -220,8 +220,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: mklittlefs-source.zip
-        include-hidden-files: true
-        path: mklittlefs
+        path: mklittlefs-source.zip
     - name: Make Brewfile update
       run: |
         sha=$(shasum -a 256 mklittlefs-source.zip | cut -f1 -d' ')
