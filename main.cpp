@@ -659,7 +659,7 @@ bool unpackFiles(std::string sDest) {
         }
     }
 
-    return unpackLFSDirFiles(sDest, "");
+    return unpackLFSDirFiles(sDest, "/");
 }
 
 // Actions
