@@ -69,7 +69,7 @@ These options include:
   - LFS_NAME_MAX
   - possibly others
 
-To see the default values of these options, check `MAkefile` file in this repository.
+To see the default values of these options, check `Makefile` file in this repository.
 
 To override some options at build time, pass extra `CPPFLAGS` to `make`. You can also set `BUILD_CONFIG_NAME` variable to distinguish the built binary:
 
@@ -86,6 +86,15 @@ $ mklittlefs --version
 ./mklittlefs  version: 0.2.3-6-g9a0e072
 ```
 
+
+## Mac installation via Homebrew
+
+This utility has been added to [Homebrew](brew.sh) and can be built and installed through the Mac command line:
+````
+brew install mklittlefs
+````
+
+
 ## Cross-compiling
 
 To build for all cross compiled targets, run
@@ -97,9 +106,3 @@ docker run --user $(id -u):$(id -g) --rm -v $(pwd):/workdir earlephilhower/gcc-c
 ## License
 
 MIT
-
-## To do
-
-- [ ] Add more debug output and print LittleFS debug output
-- [ ] Error handling
-- [ ] Code cleanup
