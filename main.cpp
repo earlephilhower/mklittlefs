@@ -432,6 +432,28 @@ int addFiles(const char* dirname, const char* subPath) {
     return (error) ? 1 : 0;
 }
 
+static int count_cb(void *data, lfs_block_t block) {
+    (void)block;
+    lfs_size_t *count = (lfs_size_t *)data;
+    *count += 1;
+    return 0;
+}
+
+void printFsInfo() {
+    if (s_debugLevel <= 3) return;
+    lfs_size_t used_blocks = 0;
+    lfs_fs_traverse(&s_fs, count_cb, &used_blocks);
+    lfs_size_t total_blocks = s_cfg.block_count;
+    lfs_size_t block_size = s_cfg.block_size;
+    lfs_size_t total = total_blocks * block_size;
+    lfs_size_t used = used_blocks * block_size;
+    lfs_size_t free = total - used;
+    std::cout << "=== Filesystem space ===" << std::endl;
+    std::cout << "  Total: " << total << " bytes (" << total_blocks << " blocks)" << std::endl;
+    std::cout << "  Used:  " << used << " bytes (" << used_blocks << " blocks)" << std::endl;
+    std::cout << "  Free:  " << free << " bytes (" << (total_blocks - used_blocks) << " blocks)" << std::endl;
+}
+
 void listFiles(const char *path) {
     int ret;
     lfs_dir_t dir;
@@ -692,6 +714,8 @@ int actionPack() {
     lfs_setattr(&s_fs, "/", 't', &ct, sizeof(ct));
     lfs_setattr(&s_fs, "/", 'c', &ct, sizeof(ct));
 
+    printFsInfo();
+
     littlefsUnmount();
 
     fwrite(&s_flashmem[0], 4, s_flashmem.size()/4, fdres);
@@ -769,6 +793,8 @@ int actionList() {
     if (lfs_getattr(&s_fs, "/", 't', &ct, sizeof(ct)) >= 0) { // and/or check 'c' as well?
         std::cout << "Creation time:" << '\t' << asctime(gmtime(&ct));
     }
+
+    printFsInfo();
 
     littlefsUnmount();
     return 0;
