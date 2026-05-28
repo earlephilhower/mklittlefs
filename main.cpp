@@ -39,8 +39,12 @@ static std::vector<uint8_t> s_flashmem;
 static std::string s_dirName;
 static std::string s_imageName;
 static uint32_t s_imageSize;
+static uint32_t s_readSize;
 static uint32_t s_pageSize;
 static uint32_t s_blockSize;
+static int32_t s_block_cycles;
+static uint32_t s_cache_size;
+static uint32_t s_lookahead_size;
 static std::string s_fromFile;
 
 enum Action { ACTION_NONE, ACTION_PACK, ACTION_UNPACK, ACTION_LIST };
@@ -96,13 +100,13 @@ void setLfsConfig()
   s_cfg.erase = lfs_flash_erase;
   s_cfg.sync  = lfs_flash_sync;
 
-  s_cfg.read_size = 64;
-  s_cfg.prog_size = 64;
+  s_cfg.read_size = s_readSize;
+  s_cfg.prog_size = s_readSize;
   s_cfg.block_size =  s_blockSize;
   s_cfg.block_count = s_flashmem.size() / s_blockSize;
-  s_cfg.block_cycles = 16; // TODO - need better explanation
-  s_cfg.cache_size = 64;
-  s_cfg.lookahead_size = 64;
+  s_cfg.block_cycles = s_block_cycles; // TODO - need better explanation
+  s_cfg.cache_size = s_cache_size;
+  s_cfg.lookahead_size = s_lookahead_size;
   s_cfg.read_buffer = nullptr;
   s_cfg.prog_buffer = nullptr;
   s_cfg.lookahead_buffer = nullptr;
@@ -838,14 +842,22 @@ void processArgs(int argc, const char** argv) {
     TCLAP::UnlabeledValueArg<std::string> outNameArg( "image_file", "littlefs image file", true, "", "image_file"  );
     TCLAP::ValueArg<int> imageSizeArg( "s", "size", "fs image size, in bytes", false, 0, "number" );
     TCLAP::ValueArg<int> pageSizeArg( "p", "page", "fs page size, in bytes", false, 256, "number" );
+    TCLAP::ValueArg<int> readSizeArg( "r", "read", "fs read size, in bytes", false, 64, "number" );
     TCLAP::ValueArg<int> blockSizeArg( "b", "block", "fs block size, in bytes", false, 4096, "number" );
+    TCLAP::ValueArg<int> block_cyclesArg( "e", "erase", "erase cycles, in bytes", false, 16, "number" );
+    TCLAP::ValueArg<int> cacheSizeArg( "m", "memory", "block caches, in bytes", false, 64, "number" );
+    TCLAP::ValueArg<int> lookaheadSizeArg( "t", "prefetch", "lookahead buffer, in bytes", false, 64, "number" );
     TCLAP::SwitchArg addAllFilesArg( "a", "all-files", "when creating an image, include files which are normally ignored; currently only applies to '.DS_Store' files and '.git' directories", false);
     TCLAP::ValueArg<int> debugArg( "d", "debug", "Debug level. 0 means no debug output.", false, 0, "0-5" );
     TCLAP::ValueArg<std::string> fromFileArg( "T", "from-file", "when creating an image, include paths in from_file instead of scanning pack_dir", false, "", "from_file");
 
     cmd.add( imageSizeArg );
     cmd.add( pageSizeArg );
+    cmd.add( readSizeArg );
     cmd.add( blockSizeArg );
+    cmd.add( block_cyclesArg );
+    cmd.add( cacheSizeArg );
+    cmd.add( lookaheadSizeArg );
     cmd.add( addAllFilesArg );
     cmd.add( debugArg );
     cmd.add( fromFileArg );
@@ -872,8 +884,12 @@ void processArgs(int argc, const char** argv) {
 
     s_imageName = outNameArg.getValue();
     s_imageSize = imageSizeArg.getValue();
+    s_readSize = readSizeArg.getValue();
     s_pageSize  = pageSizeArg.getValue();
     s_blockSize = blockSizeArg.getValue();
+    s_block_cycles = block_cyclesArg.getValue();
+    s_cache_size = cacheSizeArg.getValue();
+    s_lookahead_size = lookaheadSizeArg.getValue();
     s_addAllFiles = addAllFilesArg.isSet();
 }
 
