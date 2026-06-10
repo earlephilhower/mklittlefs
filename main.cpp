@@ -42,6 +42,7 @@ static uint32_t s_imageSize;
 static uint32_t s_readSize;
 static uint32_t s_pageSize;
 static uint32_t s_blockSize;
+static bool s_blockSizeSet = false;
 static int32_t s_block_cycles;
 static uint32_t s_cache_size;
 static uint32_t s_lookahead_size;
@@ -60,6 +61,29 @@ static const char* ignored_file_names[] = {
     ".gitignore",
     ".gitmodules"
 };
+
+// Scan raw image for "littlefs" magic string in the superblock and extract block_size.
+// Returns true if found and block_size passes basic sanity checks.
+static bool detectBlockSizeFromImage(const std::vector<uint8_t>& image, uint32_t& blockSize) {
+    const uint8_t* data = image.data();
+    size_t size = image.size();
+    // Need "littlefs"(8) + tag(4) + version(4) + block_size(4)
+    if (size < 28) return false;
+
+    for (size_t i = 0; i <= size - 28; i++) {
+        if (memcmp(data + i, "littlefs", 8) == 0) {
+            // On-disk layout after "littlefs":
+            //   [next tag: 4 bytes]
+            //   [version:   4 bytes LE]
+            //   [block_size: 4 bytes LE]
+            memcpy(&blockSize, data + i + 16, sizeof(blockSize));
+            if (blockSize >= 128 && blockSize <= size) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 int lfs_flash_read(const struct lfs_config *c, lfs_block_t block, lfs_off_t off, void *buffer, lfs_size_t size)
 {
@@ -103,7 +127,11 @@ void setLfsConfig()
   s_cfg.read_size = s_readSize;
   s_cfg.prog_size = s_readSize;
   s_cfg.block_size =  s_blockSize;
-  s_cfg.block_count = s_flashmem.size() / s_blockSize;
+  if (s_action == ACTION_UNPACK || s_action == ACTION_LIST) {
+    s_cfg.block_count = 0;  // auto-detect from superblock on disk
+  } else {
+    s_cfg.block_count = s_flashmem.size() / s_blockSize;
+  }
   s_cfg.block_cycles = s_block_cycles; // TODO - need better explanation
   s_cfg.cache_size = s_cache_size;
   s_cfg.lookahead_size = s_lookahead_size;
@@ -554,7 +582,7 @@ bool dirCreate(const char* path) {
  * @author Pascal Gollor (http://www.pgollor.de/cms/)
  */
 bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath) {
-    uint8_t buffer[littlefsFile->size];
+    std::vector<uint8_t> buffer(littlefsFile->size);
     std::string filename = lfsDir + std::string("/") + littlefsFile->name;
 
     // Open file from littlefs file system.
@@ -566,7 +594,7 @@ bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath
     }
 
     // read content into buffer
-    lfs_file_read(&s_fs, &src, buffer, littlefsFile->size);
+    lfs_file_read(&s_fs, &src, buffer.data(), littlefsFile->size);
 
     // Close littlefs file.
     lfs_file_close(&s_fs, &src);
@@ -576,7 +604,7 @@ bool unpackFile(const char *lfsDir, lfs_info *littlefsFile, const char *destPath
     if (!dst) return false;
 
     // Write content into file.
-    fwrite(buffer, sizeof(uint8_t), sizeof(buffer), dst);
+    fwrite(buffer.data(), sizeof(uint8_t), buffer.size(), dst);
 
     // Close file.
     fclose(dst);
@@ -758,8 +786,28 @@ int actionUnpack(void) {
     // close fiel handle
     fclose(fdsrc);
 
-    // mount file system
-    littlefsMount();
+    // auto-detect block_size from image superblock if not explicitly set via -b
+    if (!s_blockSizeSet) {
+        uint32_t detected = 0;
+        if (detectBlockSizeFromImage(s_flashmem, detected)) {
+            if (s_debugLevel > 0) {
+                std::cout << "detected block size: " << detected << std::endl;
+            }
+            s_blockSize = detected;
+        } else {
+            std::cerr << "warning: could not detect block size from image,"
+                      << " using " << s_blockSize << std::endl;
+        }
+    }
+
+    // mount file system (setLfsConfig uses block_count=0 for auto-detect from superblock)
+    setLfsConfig();
+    int err = lfs_mount(&s_fs, &s_cfg);
+    if (err) {
+        std::cerr << "error: could not mount filesystem (" << err << ")" << std::endl;
+        return 1;
+    }
+    s_mounted = true;
 
     // unpack files
     if (! unpackFiles(s_dirName)) {
@@ -767,7 +815,8 @@ int actionUnpack(void) {
     }
 
     // unmount file system
-    littlefsUnmount();
+    lfs_unmount(&s_fs);
+    s_mounted = false;
 
     return ret;
 }
@@ -790,7 +839,29 @@ int actionList() {
         return 1;
     }
     fclose(fdsrc);
-    littlefsMount();
+
+    // auto-detect block_size from image superblock if not explicitly set via -b
+    if (!s_blockSizeSet) {
+        uint32_t detected = 0;
+        if (detectBlockSizeFromImage(s_flashmem, detected)) {
+            if (s_debugLevel > 0) {
+                std::cout << "detected block size: " << detected << std::endl;
+            }
+            s_blockSize = detected;
+        } else {
+            std::cerr << "warning: could not detect block size from image,"
+                      << " using " << s_blockSize << std::endl;
+        }
+    }
+
+    setLfsConfig();
+    int err = lfs_mount(&s_fs, &s_cfg);
+    if (err) {
+        std::cerr << "error: could not mount filesystem (" << err << ")" << std::endl;
+        return 1;
+    }
+    s_mounted = true;
+
     listFiles("/");
 
     time_t ct;
@@ -800,7 +871,8 @@ int actionList() {
 
     printFsInfo();
 
-    littlefsUnmount();
+    lfs_unmount(&s_fs);
+    s_mounted = false;
     return 0;
 }
 
@@ -887,6 +959,7 @@ void processArgs(int argc, const char** argv) {
     s_readSize = readSizeArg.getValue();
     s_pageSize  = pageSizeArg.getValue();
     s_blockSize = blockSizeArg.getValue();
+    s_blockSizeSet = blockSizeArg.isSet();
     s_block_cycles = block_cyclesArg.getValue();
     s_cache_size = cacheSizeArg.getValue();
     s_lookahead_size = lookaheadSizeArg.getValue();
